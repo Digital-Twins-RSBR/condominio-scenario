@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+
+# Instala dependências do sistema
+echo "[✓] Instalando dependências do sistema: Python, Make, Git, Docker, Docker Compose, Mininet, Socat..."
+sudo apt update
+sudo apt install -y python3 python3-pip make git docker.io docker-compose mininet socat net-tools openjdk-11-jdk unzip wget
+
 # Carrega variáveis do .env
 ENV_FILE=".env"
 if [ -f "$ENV_FILE" ]; then
@@ -11,55 +17,10 @@ else
     exit 1
 fi
 
-REPO_DIR="$(pwd)/repos"
-SIM_COUNT="${SIMULATOR_COUNT:-10}"
-NETWORK_NAME="${COMPOSE_NETWORK:-simnet}"
+# Executa setup e install do Makefile
+echo "[✓] Executando make setup..."
+make setup
+echo "[✓] Executando make install..."
+make install
 
-mkdir -p "$REPO_DIR"
-
-function sync_repo() {
-  local name="$1"
-  local url="$2"
-  local path="$REPO_DIR/$name"
-  if [ ! -d "$path" ]; then
-    git clone "$url" "$path"
-  else
-    echo "Atualizando $name..."
-    git -C "$path" pull
-  fi
-}
-
-sync_repo "middts" "$MIDDTS_REPO_URL"
-sync_repo "iot_simulator" "$SIMULATOR_REPO_URL"
-
-docker build -t middts:latest "$REPO_DIR/middts"
-docker build -t iot_simulator:latest "$REPO_DIR/iot_simulator"
-
-cat <<EOF > docker-compose.generated.yml
-version: '3.8'
-
-services:
-EOF
-
-for i in $(seq -w 1 "$SIM_COUNT"); do
-cat <<EOF >> docker-compose.generated.yml
-  simulator_$i:
-    image: iot_simulator:latest
-    container_name: simulator_$i
-    environment:
-      - DEVICE_ID=device_$i
-    networks:
-      - $NETWORK_NAME
-
-EOF
-done
-
-cat <<EOF >> docker-compose.generated.yml
-networks:
-  $NETWORK_NAME:
-    external: true
-EOF
-
-docker network inspect "$NETWORK_NAME" >/dev/null 2>&1 ||     docker network create "$NETWORK_NAME"
-
-docker compose -f docker-compose.base.yml -f docker-compose.generated.yml up -d
+echo "[✓] Ambiente preparado. Siga os próximos passos do README para subir o cenário."
