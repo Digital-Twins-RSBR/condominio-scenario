@@ -128,4 +128,4 @@ sims-call-all:
 
 mount-shared:
 	@echo "[📂] Montando pastas compartilhadas nos hosts..."
-	sudo ./mount_shared_dirs.sh
+	sudo ./scripts/mount_shared_dirs.sh

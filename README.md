@@ -57,8 +57,8 @@ Esse script:
 ### 🧩 Criar Topologia
 
 ```bash
-make net-qos-interactive   # Cria a topologia com CLI ativa
-make net-qos-screen        # Cria a topologia rodando dentro de uma screen
+make net-qos-interactive   # Cria a topologia com CLI ativa. Serve para rodar algo e depois ao sair matar tudo.
+make net-qos-screen        # Cria a topologia rodando dentro de uma screen. Permitindo dar um detach ao final com ctrl + a + d e voltando usando screen -r mininet-session
 make net-qos               # Cria a topologia em segundo plano (detach)
 ```
 
