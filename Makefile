@@ -10,10 +10,12 @@ setup:
 	cd containernet && sudo ansible-playbook -i "localhost," -c local ansible/install.yml
 
 topo:
-	sudo python3 topology/topo_qos.py
+	@echo "[📡] Executando topologia com Containernet..."
+	PYTHONPATH=containernet sudo python3 topology/topo_qos.py
 
 draw:
-	python3 topology/draw_topology.py
+	@echo "[📡] Executando draw topologia..."
+	PYTHONPATH=containernet sudo python3 topology/draw_topology.py
 
 clean:
 	sudo mn -c
