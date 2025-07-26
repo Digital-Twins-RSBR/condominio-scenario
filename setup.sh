@@ -11,11 +11,13 @@ find scripts/ -type f -name "*.sh" -exec chmod +x {} \;
 
 sudo apt update
 
+# Dependências para Containernet e ambiente de simulação
 sudo apt install -y \
     ansible \
-    python3 \
     python3-pip \
     python3-venv \
+    python3 \
+    python3-dev \
     make \
     git \
     docker.io \
@@ -30,7 +32,6 @@ sudo apt install -y \
     iproute2 \
     tcpdump \
     python3-setuptools \
-    python3-dev \
     libffi-dev \
     libssl-dev \
     graphviz \
@@ -38,6 +39,7 @@ sudo apt install -y \
 
 echo ""
 echo "✅ [✓] Dependências instaladas com sucesso."
+echo ""
 
 echo ""
 echo "###############################################"
@@ -79,16 +81,16 @@ else
     cd containernet && git pull && cd ..
 fi
 
-# Garante que o comando `python` aponte para o `python3`
-if ! command -v python &>/dev/null; then
-    echo "🔗 Criando link simbólico: /usr/bin/python → /usr/bin/python3"
+echo "🔧 Garantindo link simbólico: /usr/bin/python → /usr/bin/python3"
+if ! [ -x /usr/bin/python ]; then
     sudo ln -s /usr/bin/python3 /usr/bin/python
 fi
 
-echo "🔧 Compilando e instalando Containernet com make..."
+echo "🩹 Removendo dependência do codecheck no Makefile (evita erro com Python moderno)..."
 cd containernet
-echo "🩹 Removendo step 'codecheck' do Makefile para evitar erro com Python..."
 sed -i 's/^all: codecheck develop/all: develop/' Makefile
+
+echo "🔧 Compilando e instalando Containernet com make..."
 sudo make
 cd ..
 
@@ -98,4 +100,4 @@ echo "🏁 [5/5] Ambiente pronto!"
 echo "###############################################"
 echo "✅ Todos os componentes foram preparados com sucesso."
 echo ""
-echo "👉 Agora, use 'make topo' ou 'sudo python3 containernet/topo_qos.py' para iniciar o cenário."
+echo "👉 Agora use: make topo  (ou sudo python3 containernet/topo_qos.py) para iniciar o cenário."
