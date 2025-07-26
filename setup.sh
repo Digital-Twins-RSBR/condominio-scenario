@@ -77,16 +77,14 @@ if [ ! -d "containernet" ]; then
     echo "📥 Clonando repositório Containernet..."
     git clone https://github.com/containernet/containernet.git
     cd containernet
+    echo "🔁 Alternando para a branch legacy..."
     git checkout legacy
     cd ..
 fi
 
-echo "🔧 Compilando e instalando Containernet..."
-echo "📁 Entrando no diretório do Containernet..."
+echo "🔧 Instalando Containernet (branch legacy)..."
 cd containernet
-echo "🔧 Instalando dependências do Containernet (modo manual)..."
 sudo ./install.sh
-
 cd ..
 
 echo ""
