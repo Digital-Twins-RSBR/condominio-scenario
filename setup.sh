@@ -100,6 +100,8 @@ sed -i '/^test:/,/^$/d' Makefile
 echo "🔧 Compilando e instalando Containernet com make..."
 sudo make
 cd ..
+echo "[📦] Registrando Containernet no ambiente Python (modo editable)..."
+sudo pip3 install -e ./containernet
 
 echo ""
 echo "###############################################"
