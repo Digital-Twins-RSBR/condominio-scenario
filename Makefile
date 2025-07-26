@@ -126,6 +126,7 @@ sims-call-all:
 	@echo "[⚙️] Executando comando em todos os simuladores..."
 	./commands/manage_simulators.sh call_all $(ARGS)
 
-mount-shared:
-	@echo "[📂] Montando pastas compartilhadas nos hosts..."
-	sudo ./scripts/mount_shared_dirs.sh
+mount-shared-dirs:
+	@echo "[🔗] Montando diretório compartilhado nos hosts da topologia..."
+	@chmod +x scripts/*.sh
+	@./scripts/mount_shared_dirs.sh
