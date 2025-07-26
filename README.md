@@ -15,7 +15,7 @@ Este repositório contém um ambiente completo e reprodutível para simulação 
 middts/                 # Código do middleware MidDiTS
 simulator/              # Código do IoT Simulator
 topologias/             # Arquivos de topologia Mininet
-commands/               # Scripts de controle e instalação
+scripts/               # Scripts de controle e instalação
 Makefile                # Orquestra instalação e execução
 .env.example            # Variáveis para clonar repositórios privados
 ```
@@ -32,8 +32,7 @@ cp .env.example .env
 ### 2. Configure tudo com Make
 
 ```bash
-make setup        # Clona repositórios
-make install      # Instala dependências
+./setup.sh        # Roda o make setup e make install
 make net          # Roda topologia Mininet simples
 make net-qos      # Roda topologia com slices de rede (URLLC, eMBB, Best Effort)
 make run          # Sobe MidDiTS, ThingsBoard e simuladores
