@@ -11,12 +11,12 @@ find scripts/ -type f -name "*.sh" -exec chmod +x {} \;
 
 sudo apt update
 
-# Dependências para Containernet, Docker e ferramentas úteis
+# Dependências para Containernet
 sudo apt install -y \
     ansible \
-    python3 \
     python3-pip \
     python3-venv \
+    python3 \
     make \
     git \
     docker.io \
@@ -38,7 +38,7 @@ sudo apt install -y \
     xterm
 
 echo ""
-echo "✅ Dependências instaladas com sucesso."
+echo "✅ [✓] Dependências instaladas com sucesso."
 echo ""
 
 echo ""
@@ -80,11 +80,24 @@ if [ ! -d "containernet" ]; then
     echo "🔁 Alternando para a branch legacy..."
     git checkout legacy
     cd ..
+else
+    echo "✅ Containernet já está clonado."
+    cd containernet
+    if [ "$(git rev-parse --abbrev-ref HEAD)" != "legacy" ]; then
+        echo "🔁 Alternando para a branch legacy..."
+        git checkout legacy
+    fi
+    cd ..
 fi
 
 echo "🔧 Instalando Containernet (branch legacy)..."
 cd containernet
-sudo ./install.sh
+if [ -f "./install.sh" ]; then
+    sudo ./install.sh
+else
+    echo "❌ Erro: install.sh não encontrado na branch legacy!"
+    exit 1
+fi
 cd ..
 
 echo ""
@@ -93,4 +106,4 @@ echo "🏁 [5/5] Ambiente pronto!"
 echo "###############################################"
 echo "✅ Todos os componentes foram preparados com sucesso."
 echo ""
-echo "👉 Agora, use 'make topo' ou 'make topo-qos' para iniciar o cenário com Containernet."
+echo "👉 Agora, use 'sudo python3 containernet/topo_qos.py' para iniciar o cenário."
