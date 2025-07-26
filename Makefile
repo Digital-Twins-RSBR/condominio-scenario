@@ -82,6 +82,32 @@ net-status:
 	@echo "[🔍] Verificando se screen 'mininet-session' está ativa..."
 	screen -ls | grep mininet-session || echo "Nenhuma sessão ativa."
 
+# 📋 Listar hosts e switches do Mininet
+net-list:
+	@echo "[📋] Listando Hosts e Switches Mininet..."
+	@echo "Hosts:"
+	@ip netns list | awk '{print " - " $$1}' | grep -E '^ - (tb|middts|sim_)'
+	@echo "Switches (do sistema):"
+	@sudo ovs-vsctl list-br | awk '{print " - " $$1}'
+
+# 🔍 Acessar um host específico no namespace do Mininet
+net-enter:
+	@if [ -z "$(host)" ]; then \
+		echo "[❌] Informe o host com 'make net-enter host=sim_001'"; \
+	else \
+		echo "[🔍] Acessando host $(host)..."; \
+		sudo ip netns exec $(host) bash || echo "[❌] Host $(host) não encontrado."; \
+	fi
+
+# 📡 Executar comando ping entre dois hosts
+net-ping:
+	@if [ -z "$(from)" ] || [ -z "$(to)" ]; then \
+		echo "[❌] Use: make net-ping from=sim_001 to=tb"; \
+	else \
+		echo "[📡] Ping de $(from) para $(to):"; \
+		sudo ip netns exec $(from) ping -c 4 $(to) || echo "[❌] Erro ao executar ping."; \
+	fi
+
 # 📡 Instalação do ThingsBoard dentro do host tb
 thingsboard:
 	@echo "[✓] Instalando ThingsBoard no host tb (Mininet)..."
@@ -130,3 +156,18 @@ mount-shared-dirs:
 	@echo "[🔗] Montando diretório compartilhado nos hosts da topologia..."
 	@chmod +x scripts/*.sh
 	@./scripts/mount_shared_dirs.sh
+
+net-unmount-shared-dirs:
+	@echo "[🗑️] Desmontando diretório compartilhado dos hosts..."
+	@HOSTS="tb middts"; \
+	for i in $(shell seq -w 1 100); do \
+		HOSTS="$$HOSTS sim_$$i"; \
+	done; \
+	for host in $$HOSTS; do \
+		if ip netns list | grep -q "^$$host"; then \
+			sudo umount -l "/var/run/netns/$$host/mnt/scripts" 2>/dev/null && echo "[✓] $$host desmontado" || echo "[!] $$host já desmontado ou inexistente"; \
+		else \
+			echo "[!] Namespace '$$host' não encontrado. Ignorando..."; \
+		fi; \
+	done
+
