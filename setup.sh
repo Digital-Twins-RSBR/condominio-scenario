@@ -11,12 +11,11 @@ find scripts/ -type f -name "*.sh" -exec chmod +x {} \;
 
 sudo apt update
 
-# Dependências para Containernet
 sudo apt install -y \
     ansible \
+    python3 \
     python3-pip \
     python3-venv \
-    python3 \
     make \
     git \
     docker.io \
@@ -39,7 +38,6 @@ sudo apt install -y \
 
 echo ""
 echo "✅ [✓] Dependências instaladas com sucesso."
-echo ""
 
 echo ""
 echo "###############################################"
@@ -74,11 +72,17 @@ echo "🛠️  [3/5] Instalando Containernet..."
 echo "###############################################"
 
 if [ ! -d "containernet" ]; then
-    echo "📥 Clonando repositório Containernet (branch padrão)..."
+    echo "📥 Clonando repositório Containernet..."
     git clone https://github.com/containernet/containernet.git
 else
     echo "✅ Containernet já está clonado. Atualizando..."
     cd containernet && git pull && cd ..
+fi
+
+# Garante que o comando `python` aponte para o `python3`
+if ! command -v python &>/dev/null; then
+    echo "🔗 Criando link simbólico: /usr/bin/python → /usr/bin/python3"
+    sudo ln -s /usr/bin/python3 /usr/bin/python
 fi
 
 echo "🔧 Compilando e instalando Containernet com make..."
@@ -86,13 +90,10 @@ cd containernet
 sudo make
 cd ..
 
-echo "✅ Containernet instalado com sucesso."
-
-
 echo ""
 echo "###############################################"
 echo "🏁 [5/5] Ambiente pronto!"
 echo "###############################################"
 echo "✅ Todos os componentes foram preparados com sucesso."
 echo ""
-echo "👉 Agora, use 'sudo python3 topology/topo_qos.py' para iniciar o cenário."
+echo "👉 Agora, use 'make topo' ou 'sudo python3 containernet/topo_qos.py' para iniciar o cenário."
