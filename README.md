@@ -1,131 +1,140 @@
-# 🧪 MidDiTS 6G Digital Twin Testbed
+# 🧪 MidDiTS 6G Digital Twin Testbed (Containernet Edition)
 
-Este repositório contém um ambiente completo e reprodutível para simulação de sistemas de gêmeos digitais integrados a redes 5G/6G, com MidDiTS, ThingsBoard e múltiplos simuladores IoT, todos conectados via topologia definida no Mininet com suporte a QoS e slices (URLLC, eMBB, Best Effort).
+Este repositório fornece um ambiente completo e reprodutível para simulações de gêmeos digitais em cenários de redes 5G/6G. Utiliza **Containernet** para simular hosts como containers Docker, com integração de QoS e múltiplos caminhos entre dispositivos simulados e um broker IoT (ThingsBoard).
 
----
+## 🔧 Componentes
 
-## 🧩 Componentes
+- **MidDiTS**: Middleware de gerenciamento e orquestração de Digital Twins.
+- **ThingsBoard**: Plataforma de IoT para coleta, visualização e controle.
+- **IoT Simulator**: Simula sensores físicos que se conectam via MQTT e escrevem telemetria.
+- **Containernet**: Simulador de rede baseado em Docker com suporte a topologias customizadas e controle de links.
 
-- **MidDiTS**: Middleware de orquestração e gerenciamento de Digital Twins.
-- **ThingsBoard**: Plataforma de IoT para coleta e controle dos dispositivos.
-- **IoT Simulator**: Simuladores de dispositivos físicos (lâmpadas, sensores, atuadores).
-- **Mininet**: Simulador de rede para experimentos com controle de QoS.
-- **Docker + Docker Compose**: Orquestração dos serviços.
-
----
-
-## 📦 Estrutura do Repositório
+## 📁 Estrutura do Projeto
 
 ```bash
-middts/                 # Código-fonte do middleware MidDiTS
-simulator/              # Código-fonte do IoT Simulator
-mininet/                # Topologias em Python (topo.py e topo_qos.py)
-generated/              # Arquivos docker-compose gerados
-scripts/                # Scripts de instalação e controle
-commands/               # Scripts para controle dos simuladores
-Makefile                # Orquestrador principal
-.env.example            # Variáveis de ambiente para setup
+containernet/             # Arquivos de topologia (topo.py, topo_qos.py, draw_topology.py)
+scripts/                  # Scripts utilitários (instalação, montagem de volumes, etc.)
+middts/                   # Repositório clonado do MidDiTS
+simulator/                # Repositório clonado do IoT Simulator
+setup.sh                  # Script para instalação completa
+Makefile                  # Automação dos comandos
+.env.example              # Arquivo com variáveis de configuração
 ```
 
 ---
 
-## 🚀 Primeiros Passos
+## 🚀 Como usar
 
-### 1. Clone o repositório e configure seu .env
+### 1. Clonar este repositório e preparar o `.env`
 
 ```bash
+git clone https://github.com/seu-usuario/condominio-scenario.git
+cd condominio-scenario
 cp .env.example .env
-# Edite o arquivo .env conforme suas URLs de repositórios
+nano .env  # Edite com URLs dos repositórios
 ```
 
-### 2. Instale tudo com o script de setup
+### 2. Executar o setup
 
 ```bash
 chmod +x setup.sh
 ./setup.sh
 ```
 
-Esse script:
-- Instala pacotes como Docker, Mininet, Socat, Screen, etc.
-- Clona ou atualiza `middts` e `iot_simulator` via SSH ou HTTPS
-- Prepara o ambiente para execução.
+Isso irá:
+- Instalar dependências
+- Clonar os repositórios
+- Preparar os arquivos compartilhados
+- Ativar o Docker
 
 ---
 
-## 🌐 Controle de Topologias com Makefile
+## 🧱 Criando a Topologia
 
-### 🧩 Criar Topologia
-
-```bash
-make net-qos-interactive   # Cria a topologia com CLI ativa. Serve para rodar algo e depois ao sair matar tudo.
-make net-qos-screen        # Cria a topologia rodando dentro de uma screen. Permitindo dar um detach ao final com ctrl + a + d e voltando usando screen -r mininet-session
-make net-qos               # Cria a topologia em segundo plano (detach)
-```
-
-### 🔎 Acompanhar ou Gerenciar a Topologia
+### Topologia com QoS (3 caminhos por simulador)
 
 ```bash
-make net-cli               # Entra na CLI do Mininet via screen
-make net-sessions          # Lista todas as screens abertas
-make net-status            # Verifica se a screen mininet-session está ativa
-make net-screen-kill       # Mata a screen ativa da topologia
-make net-clean             # Limpa qualquer topologia anterior
+sudo python3 containernet/topo_qos.py
+
+# ou então
+
+make topo
 ```
+
+A topologia conterá:
+- 100 hosts simuladores (`sim_001` a `sim_100`)
+- Host `tb` (ThingsBoard)
+- Host `middts` (MidDiTS)
+- Cada simulador terá 3 links para `tb`, com diferentes características de QoS (URLLC, eMBB, Best Effort)
 
 ---
 
-## 🧰 Instalar e Rodar os Componentes
+## 🧠 Interagindo com a Rede
 
-### ThingsBoard
+Você pode usar o prompt da Containernet (baseado no Mininet):
 
 ```bash
-make thingsboard           # Executa script de instalação no host 'tb'
+containernet> pingall
+containernet> sim_001 ifconfig
+containernet> sim_001 python3 start_simulator.py
 ```
 
-### MidDiTS, Simuladores e Compose
+Ou, se estiver usando um Makefile com automações, por exemplo:
 
 ```bash
-make run                   # Sobe todos os containers (MidDiTS, TB, Simuladores)
-make sims-start            # Sobe apenas os simuladores
-make sims-stop             # Para todos os simuladores
-make sims-call-all ARGS="status"    # Executa comando em todos
-make sims-call ARGS="sim_001 sim_002 status"  # Em alguns
-```
-
----
-
-## 🎯 Visualização da Topologia
-
-```bash
-make net-graph             # Exibe grafo com xdot (requer graphviz)
+make run
+make sims-start
+make sims-call ARGS="sim_001 status"
 ```
 
 ---
 
-## 🧹 Limpeza e Reset
+## 📦 Subindo os Serviços
+
+1. Acesse o host `tb` na Containernet:
+```bash
+containernet> tb bash
+```
+
+2. Execute o script de instalação do ThingsBoard:
+```bash
+cd /mnt/scripts
+./install_thingsboard_in_namespace.sh
+```
+
+3. Faça o mesmo para o MidDiTS no host `middts`.
+
+---
+
+## 🔗 Montando Diretórios Compartilhados (Scripts, Configs)
 
 ```bash
-make reset                 # Para e remove containers + limpa mininet
-make uninstall             # Remove tudo (MidDiTS, Simuladores, dependências)
+make mount-shared-dirs
+```
+
+Isso montará o diretório `scripts/` local como `/mnt/scripts/` dentro de todos os hosts da topologia.
+
+---
+
+## 📊 Visualizando a Topologia
+
+```bash
+make net-graph
+```
+
+> Requer o pacote `graphviz` e o utilitário `xdot`.
+
+---
+
+## 🧹 Reset e Limpeza
+
+```bash
+make clean           # Remove repositórios
+make reset           # Para containers
 ```
 
 ---
 
-## 🔐 Exemplo de .env
+## ✍️ Créditos
 
-```dotenv
-USE_SSH=true
-SIMULATOR_COUNT=100
-MIDDTS_REPO_URL=https://github.com/Digital-Twins-RSBR/middleware-dt.git
-SIMULATOR_REPO_URL=https://github.com/Digital-Twins-RSBR/iot_simulator.git
-COMPOSE_NETWORK=simnet
-INFLUXDB_TOKEN=admin_token_middts
-INFLUXDB_ORG=middts
-INFLUXDB_BUCKET=iot_data
-```
-
----
-
-## ✍️ Autoria
-
-Este projeto foi criado e organizado por pesquisadores do IFRN, UFRN, UFF, University of Coimbra e University of North Carolina no contexto de avaliação de middleware para gêmeos digitais em redes 6G.
+Este projeto foi idealizado e mantido por pesquisadores do **IFRN**, **UFRN**, **UFF**, **University of Coimbra** e **University of North Carolina**, como parte de experimentos sobre **Gêmeos Digitais e redes 6G**.

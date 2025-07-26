@@ -11,29 +11,8 @@ find scripts/ -type f -name "*.sh" -exec chmod +x {} \;
 
 sudo apt update
 
-# Pacotes essenciais para Mininet + Docker + Python + Git + etc
-sudo apt install -y \
-    python3 \
-    python3-pip \
-    make \
-    git \
-    docker.io \
-    docker-compose \
-    mininet \
-    socat \
-    net-tools \
-    openjdk-11-jdk \
-    unzip \
-    curl \
-    wget \
-    bridge-utils \
-    iproute2 \
-    tcpdump \
-    python3-setuptools \
-    python3-dev \
-    libffi-dev \
-    libssl-dev \
-    graphviz
+# Dependências para Containernet
+sudo apt install -y     python3     python3-pip     make     git     docker.io     docker-compose     socat     net-tools     openjdk-11-jdk     unzip     curl     wget     bridge-utils     iproute2     tcpdump     python3-setuptools     python3-dev     libffi-dev     libssl-dev     graphviz     ansible     xterm
 
 echo ""
 echo "✅ [✓] Dependências instaladas com sucesso."
@@ -65,17 +44,15 @@ fi
 
 echo ""
 echo "###############################################"
-echo "📁 [3/5] Clonando ou atualizando repositórios..."
+echo "⚙️  [3/5] Instalando Containernet se necessário..."
 echo "###############################################"
 
-make setup
-
-echo ""
-echo "###############################################"
-echo "⚙️  [4/5] Instalando ambiente local..."
-echo "###############################################"
-
-make install
+if [ ! -d "containernet" ]; then
+    git clone https://github.com/containernet/containernet.git
+    cd containernet && sudo ./install.sh && cd ..
+else
+    echo "🔄 Containernet já instalado."
+fi
 
 echo ""
 echo "###############################################"
@@ -83,4 +60,4 @@ echo "🏁 [5/5] Ambiente pronto!"
 echo "###############################################"
 echo "✅ Todos os componentes foram preparados com sucesso."
 echo ""
-echo "👉 Agora, siga os próximos passos do README para iniciar o cenário."
+echo "👉 Agora, use 'sudo python3 containernet/topo_qos.py' para iniciar o cenário."
