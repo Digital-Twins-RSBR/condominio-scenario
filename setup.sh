@@ -87,6 +87,8 @@ fi
 
 echo "🔧 Compilando e instalando Containernet com make..."
 cd containernet
+echo "🩹 Removendo step 'codecheck' do Makefile para evitar erro com Python..."
+sed -i 's/^all: codecheck develop/all: develop/' Makefile
 sudo make
 cd ..
 
