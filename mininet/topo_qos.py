@@ -32,3 +32,16 @@ class QosTopo(Topo):
             self.addLink(switch_name, switch_tb, cls=TCLink, bw=10, delay='2ms', loss=0, max_queue_size=100, use_htb=True)  # URLLC
             self.addLink(switch_name, switch_tb, cls=TCLink, bw=5, delay='20ms', loss=0, max_queue_size=200, use_htb=True)  # eMBB
             self.addLink(switch_name, switch_tb, cls=TCLink, bw=1, delay='50ms', loss=5, max_queue_size=50, use_htb=True)   # Best Effort
+
+
+if __name__ == '__main__':
+    setLogLevel('info')
+    topo = QosTopo(num_sims=100)
+    net = Mininet(topo=topo, controller=Controller, link=TCLink, autoSetMacs=True, autoStaticArp=True)
+    net.start()
+
+    print("[INFO] Teste de conectividade:")
+    net.pingAll()
+
+    CLI(net)
+    net.stop()
