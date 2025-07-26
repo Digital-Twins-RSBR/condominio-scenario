@@ -1,15 +1,19 @@
-.PHONY: containernet topo run clean
+.PHONY: setup topo clean
 
-containernet:
-	git clone https://github.com/containernet/containernet.git
-	cd containernet && sudo ./install.sh
+setup:
+	@echo "[✓] Configurando ambiente..."
+	sudo apt update
+	sudo apt install -y ansible git python3-pip python3-venv
+	@if [ ! -d "containernet" ]; then \
+		git clone https://github.com/containernet/containernet.git; \
+	fi
+	cd containernet && sudo ansible-playbook -i "localhost," -c local ansible/install.yml
 
 topo:
 	sudo python3 containernet/topo_qos.py
 
-run:
-	sudo docker ps
+draw:
+	python3 containernet/draw_topology.py
 
 clean:
 	sudo mn -c
-	sudo docker rm -f $(docker ps -aq) || true

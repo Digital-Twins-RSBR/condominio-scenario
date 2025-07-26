@@ -12,14 +12,18 @@ find scripts/ -type f -name "*.sh" -exec chmod +x {} \;
 sudo apt update
 
 # Dependências para Containernet
-sudo apt install -y     python3     python3-pip     make     git     docker.io     docker-compose     socat     net-tools     openjdk-11-jdk     unzip     curl     wget     bridge-utils     iproute2     tcpdump     python3-setuptools     python3-dev     libffi-dev     libssl-dev     graphviz     ansible     xterm
+sudo apt install -y  ansible python3-pip python3-venv   python3    make     git     docker.io     docker-compose     socat     net-tools     openjdk-11-jdk     unzip     curl     wget     bridge-utils     iproute2     tcpdump     python3-setuptools     python3-dev     libffi-dev     libssl-dev     graphviz    xterm
 
 echo ""
 echo "✅ [✓] Dependências instaladas com sucesso."
 echo ""
 
-# Verifica se Docker está rodando
+echo ""
+echo "###############################################"
 echo "🧪 Verificando se o Docker está em execução..."
+echo "###############################################"
+
+# Verifica se Docker está rodando
 if ! sudo systemctl is-active --quiet docker; then
     echo "🚀 Iniciando Docker..."
     sudo systemctl start docker
@@ -30,7 +34,7 @@ fi
 
 echo ""
 echo "###############################################"
-echo "📦 [2/5] Carregando variáveis do arquivo .env..."
+echo "📦 [3/5] Carregando variáveis do arquivo .env..."
 echo "###############################################"
 
 ENV_FILE=".env"
@@ -44,7 +48,7 @@ fi
 
 echo ""
 echo "###############################################"
-echo "⚙️  [3/5] Instalando Containernet se necessário..."
+echo "⚙️  [4/5] Instalando Containernet se necessário..."
 echo "###############################################"
 
 if [ ! -d "containernet" ]; then
