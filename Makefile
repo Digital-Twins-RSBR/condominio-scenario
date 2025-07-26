@@ -11,11 +11,11 @@ setup:
 
 topo:
 	@echo "[📡] Executando topologia com Containernet..."
-	PYTHONPATH=containernet sudo python3 topology/topo_qos.py
+	PYTHONPATH=$(PWD)/containernet sudo python3 topology/topo_qos.py
 
 draw:
 	@echo "[📡] Executando draw topologia..."
-	PYTHONPATH=containernet sudo python3 topology/draw_topology.py
+	PYTHONPATH=$(PWD)/containernet sudo python3 topology/draw_topology.py
 
 clean:
 	sudo mn -c
