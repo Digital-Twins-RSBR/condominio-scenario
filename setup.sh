@@ -29,7 +29,8 @@ sudo apt install -y \
     python3-setuptools \
     python3-dev \
     libffi-dev \
-    libssl-dev
+    libssl-dev \
+    graphviz
 
 echo ""
 echo "✅ [✓] Dependências instaladas com sucesso."

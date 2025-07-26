@@ -1,6 +1,6 @@
 include .env
 
-.PHONY: setup install net net-qos thingsboard run reset clean uninstall sims-start sims-stop sims-call sims-call-all
+.PHONY: setup install net net-qos net-clean net-cli net-graph thingsboard run reset clean uninstall sims-start sims-stop sims-call sims-call-all
 
 setup:
 	@echo "[✓] Verificando repositórios MidDiTS e Simulator..."
@@ -32,19 +32,27 @@ setup:
 install:
 	@echo "[✓] Instalando dependências: Mininet, Docker, Socat..."
 	sudo apt update
-	sudo apt install -y mininet docker.io docker-compose socat net-tools openjdk-11-jdk openvswitch-testcontroller
+	sudo apt install -y mininet docker.io docker-compose socat net-tools openjdk-11-jdk graphviz xdot
 
 net:
 	@echo "[✓] Iniciando topologia Mininet básica..."
 	sudo python3 mininet/topo.py
 
 net-qos:
-	@echo "[✓] Iniciando topologia Mininet com QoS Slices..."
-	sudo python3 mininet/topo_qos.py
+	@echo "[🌐] Iniciando topologia Mininet com QoS Slices (em background na screen)..."
+	@screen -S mininet-session -dm bash -c 'sudo python3 mininet/topo_qos.py; exec bash'
 
 net-clean:
 	@echo "[🧼] Limpando topologia Mininet anterior..."
 	sudo mn -c
+
+net-cli:
+	@echo "[🖥️] Acessando CLI do Mininet..."
+	@screen -r mininet-session || echo "[⚠️] Sessão Mininet não está ativa. Use 'make net-qos' para iniciar."
+
+net-graph:
+	@echo "[📊] Gerando gráfico da topologia com xdot (requer graphviz)..."
+	sudo python3 mininet/draw_topology.py | xdot -
 
 thingsboard:
 	@echo "[✓] Instalando ThingsBoard no host tb (Mininet)..."
