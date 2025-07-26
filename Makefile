@@ -10,10 +10,10 @@ setup:
 	cd containernet && sudo ansible-playbook -i "localhost," -c local ansible/install.yml
 
 topo:
-	sudo python3 containernet/topo_qos.py
+	sudo python3 topology/topo_qos.py
 
 draw:
-	python3 containernet/draw_topology.py
+	python3 topology/draw_topology.py
 
 clean:
 	sudo mn -c

@@ -12,7 +12,7 @@ Este repositório fornece um ambiente completo e reprodutível para simulações
 ## 📁 Estrutura do Projeto
 
 ```bash
-containernet/             # Arquivos de topologia (topo.py, topo_qos.py, draw_topology.py)
+topology/                 # Arquivos de topologia (topo.py, topo_qos.py, draw_topology.py)
 scripts/                  # Scripts utilitários (instalação, montagem de volumes, etc.)
 middts/                   # Repositório clonado do MidDiTS
 simulator/                # Repositório clonado do IoT Simulator
@@ -54,7 +54,7 @@ Isso irá:
 ### Topologia com QoS (3 caminhos por simulador)
 
 ```bash
-sudo python3 containernet/topo_qos.py
+sudo python3 topology/topo_qos.py
 
 # ou então
 
