@@ -17,7 +17,7 @@ def run_topo(num_sims=100):
     net.addController('c0')
 
     info('*** Adding core hosts\n')
-    tb = net.addDocker('tb', dimage="thingsboard/thingsboard:latest", dcmd="/bin/bash")
+    tb = net.addDocker('tb', dimage="thingsboard/thingsboard:3.5.2", dcmd="/bin/bash")
     middts = net.addDocker('middts', dimage="middts:latest", dcmd="/bin/bash")
 
     s_tb = net.addSwitch('s_tb')
