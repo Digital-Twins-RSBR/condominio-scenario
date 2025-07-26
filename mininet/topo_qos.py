@@ -46,7 +46,8 @@ if __name__ == '__main__':
     # os.system('mn -c')
 
     topo = QosTopo(num_sims=100)
-    net = Mininet(topo=topo, controller=Controller, link=TCLink, autoSetMacs=True, autoStaticArp=True)
+    # net = Mininet(topo=topo, controller=Controller, link=TCLink, autoSetMacs=True, autoStaticArp=True)
+    net = Mininet(topo=topo, controller=None, link=TCLink, autoSetMacs=True, autoStaticArp=True)
     net.start()
 
     print("[INFO] Testando conectividade inicial com pingAll...")

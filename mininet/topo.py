@@ -16,7 +16,8 @@ class SimpleTBTopo(Topo):
 
 if __name__ == '__main__':
     topo = SimpleTBTopo()
-    net = Mininet(topo=topo, controller=Controller, link=TCLink)
+    # net = Mininet(topo=topo, controller=Controller, link=TCLink)
+    net = Mininet(topo=topo, controller=None, link=TCLink, autoSetMacs=True, autoStaticArp=True)
     net.start()
     print("\n[Mininet iniciado]")
     print("Hosts disponíveis: sim, middts, tb")

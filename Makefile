@@ -32,7 +32,7 @@ setup:
 install:
 	@echo "[✓] Instalando dependências: Mininet, Docker, Socat..."
 	sudo apt update
-	sudo apt install -y mininet docker.io docker-compose socat net-tools openjdk-11-jdk
+	sudo apt install -y mininet docker.io docker-compose socat net-tools openjdk-11-jdk openvswitch-testcontroller
 
 net:
 	@echo "[✓] Iniciando topologia Mininet básica..."
