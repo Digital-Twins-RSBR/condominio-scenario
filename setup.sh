@@ -74,31 +74,20 @@ echo "🛠️  [3/5] Instalando Containernet..."
 echo "###############################################"
 
 if [ ! -d "containernet" ]; then
-    echo "📥 Clonando repositório Containernet..."
+    echo "📥 Clonando repositório Containernet (branch padrão)..."
     git clone https://github.com/containernet/containernet.git
-    cd containernet
-    echo "🔁 Alternando para a branch legacy..."
-    git checkout legacy
-    cd ..
 else
-    echo "✅ Containernet já está clonado."
-    cd containernet
-    if [ "$(git rev-parse --abbrev-ref HEAD)" != "legacy" ]; then
-        echo "🔁 Alternando para a branch legacy..."
-        git checkout legacy
-    fi
-    cd ..
+    echo "✅ Containernet já está clonado. Atualizando..."
+    cd containernet && git pull && cd ..
 fi
 
-echo "🔧 Instalando Containernet (branch legacy)..."
+echo "🔧 Compilando e instalando Containernet com make..."
 cd containernet
-if [ -f "./install.sh" ]; then
-    sudo ./install.sh
-else
-    echo "❌ Erro: install.sh não encontrado na branch legacy!"
-    exit 1
-fi
+sudo make
 cd ..
+
+echo "✅ Containernet instalado com sucesso."
+
 
 echo ""
 echo "###############################################"
