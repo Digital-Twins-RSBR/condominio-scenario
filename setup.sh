@@ -6,6 +6,9 @@ echo "###############################################"
 echo "🔧 [1/5] Instalando dependências do sistema..."
 echo "###############################################"
 
+echo "[✓] Garantindo permissão de execução para os scripts..."
+find scripts/ -type f -name "*.sh" -exec chmod +x {} \;
+
 sudo apt update
 
 # Pacotes essenciais para Mininet + Docker + Python + Git + etc

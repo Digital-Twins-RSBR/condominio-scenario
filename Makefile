@@ -54,9 +54,13 @@ net-graph:
 	@echo "[📊] Gerando gráfico da topologia com xdot (requer graphviz)..."
 	sudo python3 mininet/draw_topology.py | xdot -
 
+mount-shared:
+	@echo "[📂] Montando pastas compartilhadas nos hosts..."
+	sudo ./mount_shared_dirs.sh
+
 thingsboard:
 	@echo "[✓] Instalando ThingsBoard no host tb (Mininet)..."
-	mininet> tb ./install_thingsboard_in_namespace.sh
+	@screen -S mininet-session -X stuff "tb bash /mnt/scripts/install_thingsboard_in_namespace.sh\n"
 
 run:
 	@echo "[🚀] Iniciando containers do experimento..."

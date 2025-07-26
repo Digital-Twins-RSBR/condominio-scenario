@@ -50,8 +50,7 @@ if __name__ == '__main__':
     net = Mininet(topo=topo, controller=None, link=TCLink, autoSetMacs=True, autoStaticArp=True)
     net.start()
 
-    print("[INFO] Testando conectividade inicial com pingAll...")
-    net.pingAll()
+    print("[INFO] Topologia pronta. Use 'make net-cli' e rode 'pingAll' ou 'ping sim_001 tb' se quiser testar conectividade.")
 
     CLI(net)
     net.stop()
