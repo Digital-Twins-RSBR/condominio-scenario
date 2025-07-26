@@ -1,10 +1,12 @@
 include .env
 
-.PHONY: setup install net net-qos net-clean net-cli net-cli-host net-cli-exec net-kill \
+.PHONY: setup install net net-qos net-qos-screen net-qos-detach net-qos-interactive net-clean net-cli net-screen-kill net-sessions net-status \
         thingsboard run reset clean uninstall sims-start sims-stop sims-call sims-call-all
 
+# 🔧 Setup dos repositórios
 setup:
 	@echo "[✓] Verificando repositórios MidDiTS e Simulator..."
+
 	@if [ "$(USE_SSH)" = "true" ]; then \
 		MIDDTS_URL=git@github.com:Digital-Twins-RSBR/middleware-dt.git; \
 		SIMULATOR_URL=git@github.com:Digital-Twins-RSBR/iot_simulator.git; \
@@ -29,67 +31,85 @@ setup:
 		cd simulator && git checkout main && git pull; \
 	fi
 
+# 📦 Instalação de pacotes necessários
 install:
 	@echo "[✓] Instalando dependências: Mininet, Docker, Socat..."
 	sudo apt update
 	sudo apt install -y mininet docker.io docker-compose socat net-tools openjdk-11-jdk graphviz xdot screen
 
+# 🔁 Topologia básica
 net:
 	@echo "[✓] Iniciando topologia Mininet básica..."
 	sudo python3 mininet/topo.py
 
+# ⚙️ Criação da topologia com QoS (em segundo plano com screen)
 net-qos:
-	@echo "[✓] Iniciando topologia Mininet com QoS Slices..."
+	@echo "[✓] Iniciando topologia Mininet com QoS Slices (detach)..."
 	@screen -dmS mininet-session sudo python3 mininet/topo_qos.py
 
+# 👨‍💻 Criação da topologia com CLI ativa (modo interativo)
+net-qos-interactive:
+	@echo "[🧩] Rodando topo_qos.py diretamente (modo interativo)..."
+	sudo python3 mininet/topo_qos.py
+
+# 📺 Criação da topologia com CLI dentro de uma screen (anexada)
+net-qos-screen:
+	@echo "[🧠] Rodando topo_qos.py dentro de screen 'mininet-session'..."
+	screen -S mininet-session sudo python3 mininet/topo_qos.py
+
+# 🧼 Limpeza da topologia
 net-clean:
-	@echo "[🧼] Limpando topologia Mininet..."
-	@screen -S mininet-session -X quit || true
+	@echo "[🧼] Limpando topologia Mininet anterior..."
 	sudo mn -c
 
+# 💻 Acessar CLI da screen se ativa
 net-cli:
 	@echo "[🖥️] Acessando CLI do Mininet (screen)..."
-	@screen -r mininet-session || echo "Mininet não está rodando. Use 'make net-qos' primeiro."
+	screen -r mininet-session || echo "Mininet não está rodando. Use 'make net-qos-screen' ou 'make net-qos-interactive'."
 
-net-cli-host:
-	@echo "[🖥️] Entrando no host $(HOST) pela CLI da sessão Mininet..."
-	@screen -S mininet-session -p 0 -X stuff "$(HOST)\n"
+# 💣 Matar screen da topologia
+net-screen-kill:
+	@echo "[💥] Matando screen 'mininet-session'..."
+	screen -S mininet-session -X quit
 
-net-cli-exec:
-	@echo "[⚙️] Executando comando no host $(HOST): $(CMD)"
-	@screen -S mininet-session -p 0 -X stuff "$(HOST) $(CMD)\n"
+# 📋 Listar sessões screen
+net-sessions:
+	@echo "[📋] Sessões screen ativas:"
+	screen -ls
 
-net-kill:
-	@echo "[💀] Encerrando a sessão Mininet (kill manual)..."
-	@screen -S mininet-session -X quit || echo "Nenhuma sessão ativa."
-	@sudo mn -c
+# 🔍 Verificar status da sessão screen
+net-status:
+	@echo "[🔍] Verificando se screen 'mininet-session' está ativa..."
+	screen -ls | grep mininet-session || echo "Nenhuma sessão ativa."
 
-net-graph:
-	@echo "[📊] Gerando gráfico da topologia com xdot (requer graphviz)..."
-	@sudo python3 mininet/draw_topology.py | xdot - || echo "xdot ou GTK pode não estar disponível via terminal puro."
-
+# 📡 Instalação do ThingsBoard dentro do host tb
 thingsboard:
 	@echo "[✓] Instalando ThingsBoard no host tb (Mininet)..."
-	@screen -S mininet-session -p 0 -X stuff "tb /mnt/scripts/install_thingsboard_in_namespace.sh\n"
+	mininet> tb ./install_thingsboard_in_namespace.sh
 
+# 🚀 Subida de containers (MidDiTS, TB, Simuladores)
 run:
 	@echo "[🚀] Iniciando containers do experimento..."
 	docker-compose up -d
 
+# 🔄 Reset geral
 reset:
 	@echo "[🧼] Resetando ambiente: containers e Mininet..."
 	sudo mn -c
 	docker stop `docker ps -q` || true
 	docker rm `docker ps -aq` || true
 
+# 🧽 Limpeza de repositórios locais
 clean:
-	@echo "[🧽] Limpando diretórios de código..."
+	@echo "[🧽] Limpando tudo..."
 	rm -rf middts simulator
 
+# 🧹 Desinstalação completa
 uninstall:
 	@echo "[🧹] Executando desinstalação completa..."
 	./commands/uninstall_all.sh
 
+# 🔧 Simuladores
 sims-start:
 	@echo "[🚀] Subindo todos os simuladores..."
 	./commands/manage_simulators.sh start
