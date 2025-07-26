@@ -88,7 +88,9 @@ fi
 
 echo "🩹 Removendo dependência do codecheck no Makefile (evita erro com Python moderno)..."
 cd containernet
-sed -i 's/^all: codecheck develop/all: develop/' Makefile
+echo "🩹 Limpando targets problemáticos do Makefile (removendo 'codecheck' se existir)..."
+sed -i '/^all:/s/codecheck//g' Makefile
+sed -i '/^codecheck:/,/^$/d' Makefile
 
 echo "🔧 Compilando e instalando Containernet com make..."
 sudo make
