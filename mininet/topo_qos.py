@@ -23,7 +23,7 @@ class QosTopo(Topo):
 
         for i in range(1, num_sims + 1):
             host_name = f'sim_{i:03d}'
-            switch_name = f's_{i:03d}'
+            switch_name = f's{i}'
             self.addSwitch(switch_name)
             self.addHost(host_name)
             self.addLink(host_name, switch_name)
@@ -45,3 +45,6 @@ if __name__ == '__main__':
 
     CLI(net)
     net.stop()
+
+# Comando mininet para limpar o ambiente:
+# sudo mn -c
