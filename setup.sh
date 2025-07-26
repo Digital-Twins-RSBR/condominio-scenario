@@ -84,7 +84,7 @@ fi
 echo "🔧 Compilando e instalando Containernet..."
 echo "📁 Entrando no diretório do Containernet..."
 cd containernet
-cho "🔧 Instalando dependências do Containernet (modo manual)..."
+echo "🔧 Instalando dependências do Containernet (modo manual)..."
 sudo ./install.sh
 
 cd ..
