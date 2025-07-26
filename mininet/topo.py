@@ -1,5 +1,6 @@
 from mininet.topo import Topo
 from mininet.net import Mininet
+from mininet.node import Controller
 from mininet.link import TCLink
 from mininet.cli import CLI
 
@@ -15,8 +16,7 @@ class SimpleTBTopo(Topo):
 
 if __name__ == '__main__':
     topo = SimpleTBTopo()
-    net = Mininet(topo=topo, controller=None, link=TCLink)
-    net.addController('c0')
+    net = Mininet(topo=topo, controller=Controller, link=TCLink)
     net.start()
     print("\n[Mininet iniciado]")
     print("Hosts disponíveis: sim, middts, tb")
