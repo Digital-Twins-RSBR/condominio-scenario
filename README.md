@@ -1,145 +1,131 @@
 # 🧪 MidDiTS 6G Digital Twin Testbed
 
-Este repositório contém um ambiente completo e reprodutível para simulação de sistemas de gêmeos digitais integrados a redes 5G/6G, com MidDiTS, ThingsBoard e múltiplos simuladores IoT.
+Este repositório contém um ambiente completo e reprodutível para simulação de sistemas de gêmeos digitais integrados a redes 5G/6G, com MidDiTS, ThingsBoard e múltiplos simuladores IoT, todos conectados via topologia definida no Mininet com suporte a QoS e slices (URLLC, eMBB, Best Effort).
+
+---
 
 ## 🧩 Componentes
 
 - **MidDiTS**: Middleware de orquestração e gerenciamento de Digital Twins.
 - **ThingsBoard**: Plataforma de IoT para coleta e controle dos dispositivos.
-- **IoT Simulator**: Simula dispositivos físicos (ex: sensores de fumaça, fechaduras, lâmpadas).
-- **Mininet**: Simulador de rede para experimentos com QoS e Slicing.
+- **IoT Simulator**: Simuladores de dispositivos físicos (lâmpadas, sensores, atuadores).
+- **Mininet**: Simulador de rede para experimentos com controle de QoS.
+- **Docker + Docker Compose**: Orquestração dos serviços.
 
-## 📦 Estrutura
+---
 
-```bash
-middts/                 # Código do middleware MidDiTS
-simulator/              # Código do IoT Simulator
-topologias/             # Arquivos de topologia Mininet
-scripts/               # Scripts de controle e instalação
-Makefile                # Orquestra instalação e execução
-.env.example            # Variáveis para clonar repositórios privados
-```
-
-## 🚀 Como usar
-
-### 1. Clone este repositório e prepare o .env
+## 📦 Estrutura do Repositório
 
 ```bash
-cp .env.example .env
-# Edite .env com os repositórios privados (GitLab)
-```
-
-### 2. Configure tudo com Make
-
-```bash
-./setup.sh        # Roda o make setup e make install
-make net          # Roda topologia Mininet simples
-make net-qos      # Roda topologia com slices de rede (URLLC, eMBB, Best Effort)
-make run          # Sobe MidDiTS, ThingsBoard e simuladores
+middts/                 # Código-fonte do middleware MidDiTS
+simulator/              # Código-fonte do IoT Simulator
+mininet/                # Topologias em Python (topo.py e topo_qos.py)
+generated/              # Arquivos docker-compose gerados
+scripts/                # Scripts de instalação e controle
+commands/               # Scripts para controle dos simuladores
+Makefile                # Orquestrador principal
+.env.example            # Variáveis de ambiente para setup
 ```
 
 ---
 
-## Instalação Inicial Manual na VM
+## 🚀 Primeiros Passos
 
-Se preferir instalar manualmente ou não utilizar o Makefile, siga os passos abaixo:
-
-### 1. Dependências
-
-Certifique-se de que sua VM possui:
-- Docker
-- Docker Compose
-- Git
-- Python 3 (para scripts auxiliares)
-
-### 2. Configuração do ambiente
-
-1. Clone este repositório:
-   ```bash
-   git clone <url-do-repositorio-condominio-scenario>
-   cd condominio-scenario
-   ```
-
-2. Configure o arquivo `.env` conforme exemplo abaixo:
-   ```env
-   # Exemplo de token de acesso GitLab
-   GITLAB_TOKEN=seu_token_aqui
-
-   # .env
-   SIMULATOR_COUNT=100
-   MIDDTS_REPO_URL=https://github.com/seu-usuario/middts.git
-   SIMULATOR_REPO_URL=https://github.com/seu-usuario/iot_simulator.git
-   COMPOSE_NETWORK=simnet
-   INFLUXDB_TOKEN=admin_token_middts
-   INFLUXDB_ORG=middts
-   INFLUXDB_BUCKET=iot_data
-   ```
-
-### 3. Clonagem dos projetos necessários
-
-Clone os repositórios do `middts` e do `iot_simulator` conforme URLs configuradas no `.env`.
-
-### 4. Build das imagens Docker
-
-Certifique-se de que as imagens do `middts` e do `iot_simulator` estejam construídas e disponíveis localmente ou em um registry acessível.
-
-Exemplo para build local:
-```bash
-cd middts
-docker build -t middts:latest .
-cd ../iot_simulator
-docker build -t iot_simulator:latest .
-```
-
-### 5. Gerar o arquivo docker-compose
-
-Execute o script para gerar o arquivo de composição dos containers:
-```bash
-python3 generate-compose.py
-```
-O arquivo será gerado em `generated/docker-compose.generated.yml`.
-
-### 6. Subir o cenário
-
-Utilize o docker-compose para subir o ambiente:
-```bash
-docker-compose -f generated/docker-compose.generated.yml up -d
-```
-
-### 7. Acesso aos serviços
-
-- Thingsboard: acesse pela porta padrão configurada no compose
-- Middts: acesse pela porta 8000
-
-### Observações
-
-- Cada simulador terá 3 conexões com o Thingsboard, respeitando o QoS.
-- O Thingsboard terá 3 conexões com o Middts para QoS.
-- O Middts pode ser acessado para gerar digital twins dos devices de cada casa.
-
-Se ocorrer algum erro durante o processo, siga as mensagens de erro e reporte para correção.
-
-### 3. Controle os simuladores
+### 1. Clone o repositório e configure seu .env
 
 ```bash
-make sims-start                           # Inicia 100 containers
-make sims-call ARGS="sync"               # Roda comando em todos
-make sims-call ARGS="sim_001 sim_002 status"  # Apenas em alguns
-make sims-stop                            # Para todos os simuladores
+cp .env.example .env
+# Edite o arquivo .env conforme suas URLs de repositórios
 ```
 
-### 4. Acesse os serviços
-
-- ThingsBoard: http://localhost:8080  
-- MidDiTS API: http://localhost:8000  
-
-## 🧹 Reset e limpeza
+### 2. Instale tudo com o script de setup
 
 ```bash
-make reset        # Para containers e limpa Mininet
-make uninstall    # Remove tudo da máquina (reversão total)
+chmod +x setup.sh
+./setup.sh
 ```
 
-## ✍️ Autor
+Esse script:
+- Instala pacotes como Docker, Mininet, Socat, Screen, etc.
+- Clona ou atualiza `middts` e `iot_simulator` via SSH ou HTTPS
+- Prepara o ambiente para execução.
 
-Este projeto foi criado e organizado por pesquisadores do IFRN, UFRN, UFF, University of Coimbra and University of North Carolina  no contexto de avaliação de middleware para gêmeos digitais em redes 6G.
+---
+
+## 🌐 Controle de Topologias com Makefile
+
+### 🧩 Criar Topologia
+
+```bash
+make net-qos-interactive   # Cria a topologia com CLI ativa
+make net-qos-screen        # Cria a topologia rodando dentro de uma screen
+make net-qos               # Cria a topologia em segundo plano (detach)
+```
+
+### 🔎 Acompanhar ou Gerenciar a Topologia
+
+```bash
+make net-cli               # Entra na CLI do Mininet via screen
+make net-sessions          # Lista todas as screens abertas
+make net-status            # Verifica se a screen mininet-session está ativa
+make net-screen-kill       # Mata a screen ativa da topologia
+make net-clean             # Limpa qualquer topologia anterior
+```
+
+---
+
+## 🧰 Instalar e Rodar os Componentes
+
+### ThingsBoard
+
+```bash
+make thingsboard           # Executa script de instalação no host 'tb'
+```
+
+### MidDiTS, Simuladores e Compose
+
+```bash
+make run                   # Sobe todos os containers (MidDiTS, TB, Simuladores)
+make sims-start            # Sobe apenas os simuladores
+make sims-stop             # Para todos os simuladores
+make sims-call-all ARGS="status"    # Executa comando em todos
+make sims-call ARGS="sim_001 sim_002 status"  # Em alguns
+```
+
+---
+
+## 🎯 Visualização da Topologia
+
+```bash
+make net-graph             # Exibe grafo com xdot (requer graphviz)
+```
+
+---
+
+## 🧹 Limpeza e Reset
+
+```bash
+make reset                 # Para e remove containers + limpa mininet
+make uninstall             # Remove tudo (MidDiTS, Simuladores, dependências)
+```
+
+---
+
+## 🔐 Exemplo de .env
+
+```dotenv
+USE_SSH=true
+SIMULATOR_COUNT=100
+MIDDTS_REPO_URL=https://github.com/Digital-Twins-RSBR/middleware-dt.git
+SIMULATOR_REPO_URL=https://github.com/Digital-Twins-RSBR/iot_simulator.git
+COMPOSE_NETWORK=simnet
+INFLUXDB_TOKEN=admin_token_middts
+INFLUXDB_ORG=middts
+INFLUXDB_BUCKET=iot_data
+```
+
+---
+
+## ✍️ Autoria
+
+Este projeto foi criado e organizado por pesquisadores do IFRN, UFRN, UFF, University of Coimbra e University of North Carolina no contexto de avaliação de middleware para gêmeos digitais em redes 6G.
