@@ -42,6 +42,10 @@ net-qos:
 	@echo "[✓] Iniciando topologia Mininet com QoS Slices..."
 	sudo python3 mininet/topo_qos.py
 
+net-clean:
+	@echo "[🧼] Limpando topologia Mininet anterior..."
+	sudo mn -c
+
 thingsboard:
 	@echo "[✓] Instalando ThingsBoard no host tb (Mininet)..."
 	mininet> tb ./install_thingsboard_in_namespace.sh
