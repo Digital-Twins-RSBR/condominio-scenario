@@ -2,6 +2,16 @@
 set -e
 
 echo "🔧 Instalando dependências do sistema..."
+# antes de apt update
+echo "🗝️ Adicionando chave pública PostgreSQL..."
+curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+  | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.asc
+
+echo "🧾 Criando arquivo sources.list do PostgreSQL..."
+. /etc/os-release
+sudo sh -c "echo 'deb [signed-by=/etc/apt/trusted.gpg.d/postgresql.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main' \
+  > /etc/apt/sources.list.d/pgdg.list"
+
 sudo apt update
 sudo apt install -y ansible git python3-pip python3-venv docker.io docker-compose socat net-tools openjdk-11-jdk curl wget bridge-utils iproute2 tcpdump python3-dev libffi-dev libssl-dev graphviz xterm
 
