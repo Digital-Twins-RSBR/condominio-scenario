@@ -1,34 +1,22 @@
 .PHONY: setup build-images topo draw clean
 
 setup:
-	@echo "[Setup] Limpando entradas de repositórios conflitantes..."
-	sudo rm -f /etc/apt/sources.list.d/pgdg.list
-	sudo rm -f /etc/apt/sources.list.d/pgdg.sources
-	@echo "[Setup] Atualizando apt..."
-	sudo apt update || (echo "❌ apt update falhou" && exit 1)
-	@echo "[Docker] inicia Docker..."
-	sudo systemctl enable docker
-	sudo systemctl start docker
-	@echo "[Docker] docker adiciona usuário ao grupo..."
-	sudo groupadd -f docker
-	sudo usermod -aG docker $(USER)
-	docker context use default || true
-	@echo "[Setup] Instalando Containernet via Ansible..."
-	cd containernet && ansible-playbook -i "localhost," -c local ansible/install.yml
+	@echo "[Setup] Executando setup.sh"
+	@bash setup.sh
 
 build-images:
-	@echo "[🐳] Construindo imagens MidDiTS e IoT Simulator..."
-	docker build -t middts:latest ./middts
-	docker build -t iot_simulator:latest ./simulator
+	@echo "[Build] Construindo imagens docker internas..."
+	@docker build -t middts:latest ./middts
+	@docker build -t iot_simulator:latest ./simulator
 
 topo:
-	@echo "[📡] Executando topologia com Containernet..."
-	PYTHONPATH=containernet sudo python3 topology/topo_qos.py
+	@echo "[Topo] Iniciando topologia com Containernet..."
+	@PYTHONPATH=./containernet sudo python3 topology/topo_qos.py || { echo "[ERROR] topo execution failed."; exit 1; }
 
 draw:
-	@echo "[🖼️] Gerando visualização da topologia..."
-	PYTHONPATH=containernet sudo python3 topology/draw_topology.py
+	@echo "[Draw] Gerando visualização da topologia..."
+	@PYTHONPATH=./containernet sudo python3 topology/draw_topology.py || { echo "[ERROR] draw execution failed."; exit 1; }
 
 clean:
-	@echo "[🧼] Limpeza Mininet..."
-	sudo mn -c
+	@echo "[Clean] Limpando ambiente Mininet/Containernet..."
+	@sudo mn -c || echo "[WARN] mn -c encontrou erro."
