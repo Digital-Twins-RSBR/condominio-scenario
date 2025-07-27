@@ -2,6 +2,10 @@
 
 setup:
 	@echo "[Setup] Instalando Containernet via Ansible..."
+	@echo "🔄 Limpando cache e atualizando apt antes do Ansible..."
+	sudo rm -rf /var/lib/apt/lists/*
+	sudo apt clean
+	sudo apt update || (echo "❌ apt update falhou; corrija os repositórios." && exit 1)
 	cd containernet && ansible-playbook -i "localhost," -c local ansible/install.yml
 
 build-images:
