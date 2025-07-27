@@ -1,105 +1,30 @@
 #!/bin/bash
 set -e
 
-echo ""
-echo "###############################################"
-echo "🔧 [1/5] Instalando dependências do sistema..."
-echo "###############################################"
-
-echo "[✓] Garantindo permissão de execução para os scripts..."
-find scripts/ -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
-
+echo "🔧 Instalando dependências do sistema..."
 sudo apt update
+sudo apt install -y ansible git python3-pip python3-venv docker.io docker-compose socat net-tools openjdk-11-jdk curl wget bridge-utils iproute2 tcpdump python3-dev libffi-dev libssl-dev graphviz xterm
 
-# Dependências para Containernet e Docker
-sudo apt install -y \
-    ansible \
-    python3-pip \
-    python3-venv \
-    python3 \
-    python3-dev \
-    make \
-    git \
-    docker.io \
-    docker-compose \
-    socat \
-    net-tools \
-    openjdk-11-jdk \
-    unzip \
-    curl \
-    wget \
-    bridge-utils \
-    iproute2 \
-    tcpdump \
-    python3-setuptools \
-    libffi-dev \
-    libssl-dev \
-    graphviz \
-    xterm \
-    python3-networkx \
-    python3-matplotlib
-
-echo ""
-echo "✅ Dependências instaladas com sucesso."
-
-echo ""
-echo "###############################################"
 echo "🧪 Verificando Docker..."
-echo "###############################################"
+sudo systemctl enable --now docker
 
-if ! sudo systemctl is-active --quiet docker; then
-    echo "🚀 Iniciando Docker..."
-    sudo systemctl start docker
-    sudo systemctl enable docker
+echo "📦 Carregando variáveis do .env..."
+if [ -f .env ]; then export $(grep -v '^#' .env | xargs); else echo ".env não encontrado"; exit 1; fi
+
+echo "📥 Clonando ou atualizando Containernet..."
+if [ ! -d containernet ]; then
+  git clone https://github.com/containernet/containernet.git
 else
-    echo "✅ Docker já está em execução."
+  cd containernet && git pull && cd ..
 fi
 
-echo ""
-echo "###############################################"
-echo "📦 [2/5] Carregando variáveis do .env (se existir)..."
-echo "###############################################"
+echo "🔗 Criando link python e removendo targets problemáticos..."
+cd containernet
+sudo ln -sf /usr/bin/python3 /usr/bin/python
+sed -i '/^all:/s/codecheck//; /^codecheck:/,/^$/d' Makefile
+sed -i '/^all:/s/test//; /^test:/,/^$/d' Makefile
 
-ENV_FILE=".env"
-if [ -f "$ENV_FILE" ]; then
-    echo "🗂️  Carregando variáveis..."
-    export $(grep -v '^#' "$ENV_FILE" | xargs)
-else
-    echo "⚠️  Arquivo .env não encontrado. Prosseguindo com valores padrão."
-fi
+echo "🛠️ Compilando Containernet..."
+sudo make && cd ..
 
-echo ""
-echo "###############################################"
-echo "🛠️  [3/5] Clonando e Instalando Containernet..."
-echo "###############################################"
-
-if [ ! -d "containernet" ]; then
-    echo "📥 Clonando repositório Containernet..."
-    git clone https://github.com/containernet/containernet.git
-fi
-
-cd containernet && git pull
-sudo ansible-playbook -i "localhost," -c local ansible/install.yml
-
-echo "🧪 Criando ambiente Python e instalando Containernet no venv..."
-python3 -m venv venv
-source venv/bin/activate
-pip install -e . --no-binary :all:
-
-echo "✅ Containernet instalado dentro do venv. Use 'source containernet/venv/bin/activate' antes de rodar topologia."
-cd ..
-# Remover targets problemáticos do Makefile
-# cd containernet
-# echo "🧹 Limpando Makefile de targets problemáticos..."
-# sed -i '/^all:/s/codecheck test//g' Makefile
-# sed -i '/^codecheck:/,/^$/d' Makefile
-# sed -i '/^test:/,/^$/d' Makefile
-
-# echo "🔧 Compilando Containernet..."
-# sudo make
-# cd ..
-
-echo ""
-echo "✅ Ambiente pronto! Agora rode:"
-echo "👉 make build-images"
-echo "👉 make topo"
+echo "✅ Setup concluído. Use 'make setup build-images topo draw'."
