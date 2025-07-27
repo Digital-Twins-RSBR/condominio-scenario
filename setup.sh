@@ -1,77 +1,83 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
+
 LOGFILE="setup.log"
-
-exec > >(tee -a "$LOGFILE") 2>&1
+exec > >(tee -i "$LOGFILE") 2>&1
 
 echo "###############################################"
-echo "🔧 [1/6] Atualizando cache apt e instalando dependências básicas"
+echo "🔧 [1/6] Atualizando cache apt e instalando pacotes básicos"
 echo "###############################################"
-sudo rm -rf /var/lib/apt/lists/*
+
+sudo rm -rf /var/lib/apt/lists/* || true
 sudo apt clean
-if ! sudo apt update; then
-  echo "[ERROR] apt update falhou" >&2
-  exit 1
-fi
-sudo apt install -y ansible git curl gnupg lsb-release ca-certificates make python3-pip python3-venv docker-ce docker-ce-cli containerd.io docker-compose-plugin
+sudo apt update || { echo "[ERROR] apt update falhou"; exit 1; }
+sudo apt install -y apt-transport-https ca-certificates curl gnupg lsb-release software-properties-common
 
 echo ""
-echo "✅ [1/6] Dependências instaladas."
+echo "###############################################"
+echo "🔑 [2/6] Adicionando chave GPG oficial do Docker"
+echo "###############################################"
 
-echo "###############################################"
-echo "🔐 [2/6] Corrigindo chave GPG do Docker (PUBKEY: 7EA0A9C3F273FCD8)"
-echo "###############################################"
 sudo mkdir -p /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg || echo "[WARN] permissão do keyring Docker não pôde ser ajustada"
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+ $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+    | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-echo "Atualizando repositórios com a nova chave..."
-if ! sudo apt update; then
-  echo "[ERROR] apt update ainda falha após inserir chave Docker" >&2
-  exit 1
-fi
+sudo apt update || { echo "[ERROR] apt update após adicionar Docker repo falhou"; exit 1; }
 
-echo "✅ [2/6] Repositório Docker adicionado com sucesso."
-
+echo ""
 echo "###############################################"
-echo "📦 [3/6] Instalando Docker Engine & Compose plugin"
+echo "🐳 [3/6] Instalando Docker Engine + Compose Plugin"
 echo "###############################################"
-sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-echo "✅ [3/6] Docker instalado e ativo."
 
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || {
+    echo "[ERROR] instalação Docker falhou"; exit 1;
+}
+
+sudo systemctl enable --now docker
+echo "[INFO] Docker instalado e ativo: $(docker --version)"
+
+echo ""
 echo "###############################################"
-echo "⚙️  [4/6] Clonando/atualizando Containernet via Ansible"
+echo "👥 [4/6] Configurando grupo docker para acesso sem sudo"
 echo "###############################################"
+
+sudo groupadd -f docker
+sudo usermod -aG docker "$USER" || true
+echo "[INFO] Usuário '$USER' adicionado ao grupo 'docker'. Você pode precisar relogar."
+
+echo ""
+echo "###############################################"
+echo "📦 [5/6] Instalando dependências gerais"
+echo "###############################################"
+
+sudo apt install -y ansible git python3-pip python3-venv make
+echo "[INFO] Dependências gerais instaladas."
+
+echo ""
+echo "###############################################"
+echo "🛠️  [6/6] Clonando/Atualizando Containernet e executando Ansible"
+echo "###############################################"
+
 if [ ! -d "containernet" ]; then
-  echo "[INFO] clonando containernet..."
-  git clone https://github.com/containernet/containernet.git
+    echo "[INFO] Clonando Containernet..."
+    git clone https://github.com/containernet/containernet.git
 else
-  echo "[INFO] atualizando containernet..."
-  cd containernet && git pull && cd ..
+    echo "[INFO] Diretório containernet já existe, atualizando..."
+    cd containernet && git pull && cd ..
 fi
 
-echo "[INFO] executando Ansible playbook..."
+echo "[INFO] Executando Ansible playbook de instalação"
 cd containernet
-ansible-playbook -i "localhost," -c local ansible/install.yml || {
-  echo "[ERROR] Ansible falhou ao instalar Containernet" >&2
-  exit 1
+ansible-playbook -i "localhost," -c local ansible/install.yml -v || {
+    echo "[ERROR] Ansible falhou. Veja '$LOGFILE' para detalhes."; exit 1;
 }
 cd ..
 
-echo "✅ [4/6] Containernet instalado com sucesso."
+echo ""
+echo "✅ Setup concluído com sucesso!"
+echo "📄 Logs em '$LOGFILE'"
+echo "➡️ Use 'make setup build-images topo draw' ou conforme README"
 
-echo "###############################################"
-echo "🐳 [5/6] Construindo imagens MiddTS e IoT Simulator"
-echo "###############################################"
-docker build -t middts:latest ./middts || { echo "[ERROR] build MiddTS falhou"; exit 1; }
-docker build -t iot_simulator:latest ./simulator || { echo "[ERROR] build Simulator falhou"; exit 1; }
-echo "✅ [5/6] Imagens construídas."
-
-echo "###############################################"
-echo "🚀 [6/6] Setup finalizado com sucesso!"
-echo "###############################################"
-echo "Para continuar: use 'make topo' para iniciar a topologia com Containernet."
-echo "Logs completos: $LOGFILE"
