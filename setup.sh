@@ -1,68 +1,55 @@
 #!/bin/bash
 set -e
-LOGFILE="setup.log"
-exec > >(tee -a "$LOGFILE") 2>&1
+LOG="setup.log"
+exec > >(tee -a "$LOG") 2>&1
 
 echo "###############################################"
-echo "🔧 [1/6] Atualizando apt e instalando dependências base"
+echo "🔧 [1/5] Atualizando apt e instalando dependências básicas"
 echo "###############################################"
+sudo apt-get clean
 sudo rm -rf /var/lib/apt/lists/*
-sudo apt clean
-if ! sudo apt update; then
-  echo "[ERROR] apt update falhou — verifique repositórios" >&2
-  exit 1
-fi
-sudo apt install -y ansible python3-pip python3-venv make git curl wget \
-  docker.io containerd.io docker-compose-plugin socat net-tools bridge-utils \
-  iproute2 tcpdump python3-dev libffi-dev libssl-dev graphviz xterm unzip
+sudo apt-get update || { echo "[ERROR] apt update falhou"; exit 1; }
+sudo apt-get install -y \
+  ansible git python3 python3-pip python3-venv make \
+  curl wget socat net-tools xterm bridge-utils iproute2 tcpdump \
+  python3-dev libffi-dev libssl-dev graphviz docker.io docker-compose || {
+    echo "[ERROR] Falha ao instalar pacotes essenciais"; exit 1; }
+
+echo "✅ Dependências instaladas com sucesso."
 
 echo "###############################################"
-echo "🧪 [2/6] Verificando Docker e permissões"
+echo "🧪 [2/5] Ativando Docker e adicionando usuário ao grupo"
 echo "###############################################"
-if ! sudo systemctl is-active --quiet docker; then
-  echo "[INFO] Ativando Docker..."
-  sudo systemctl start docker && sudo systemctl enable docker
-fi
-sudo groupadd -f docker
-sudo usermod -aG docker "$USER"
+sudo systemctl enable --now docker
+sudo usermod -aG docker "$USER" || echo "[WARN] não foi possível adicionar usuário ao grupo docker"
+
+echo "✅ Docker pronto."
 
 echo "###############################################"
-echo "📦 [3/6] Gerenciando repositórios APT problemáticos"
+echo "📦 [3/5] Clonando/Atualizando Containernet"
 echo "###############################################"
-# Corrige fontes problemáticas do Docker
-if grep -R "duplicate" /etc/apt/sources.list.d; then
-  sudo rm /etc/apt/sources.list.d/docker*.list
-  echo "[INFO] Removidos .list conflitantes do Docker"
-fi
-
-echo "###############################################"
-echo "🛠️  [4/6] Instalando ou atualizando Containernet via Ansible"
-echo "###############################################"
-if [ ! -d "containernet" ]; then
-  echo "[INFO] Clonando Containernet..."
+if [ ! -d containernet ]; then
   git clone https://github.com/containernet/containernet.git
 else
-  echo "[INFO] Atualizando Containernet existente..."
   cd containernet && git pull && cd ..
 fi
 
-cd containernet
-
-# Limpando pasta openflow para evitar conflitos
-if [ -d "openflow" ]; then
-  echo "[WARN] Diretório 'openflow' já existe — removendo para rebuild"
-  rm -rf openflow
-fi
-
-echo "[INFO] Executando playbook de instalação"
-if ! sudo ansible-playbook -i "localhost," -c local ansible/install.yml; then
-  echo "[ERROR] Falha na instalação pelo Ansible — verifique $LOGFILE" >&2
-  exit 1
-fi
-
-cd ..
+echo "✅ Containernet atualizado."
 
 echo "###############################################"
-echo "✅ [6/6] Setup concluído com sucesso!"
-echo "Log completo em: $LOGFILE"
-echo "Use: make setup build-images topo draw"
+echo "🩹 [4/5] Instalando Containernet em virtualenv"
+echo "###############################################"
+cd containernet
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip setuptools wheel
+pip install -e . --no-binary :all: || { echo "[ERROR] pip install Containernet falhou"; exit 1; }
+deactivate
+cd ..
+
+echo "✅ Containernet instalado com sucesso."
+
+echo "###############################################"
+echo "🏁 [5/5] Ambiente pronto"
+echo "###############################################"
+echo "Agora execute: source containernet/venv/bin/activate && sudo -E env PATH=\"\$PATH\" make build-images topo draw"

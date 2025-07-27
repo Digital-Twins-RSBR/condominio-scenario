@@ -152,6 +152,21 @@ make reset           # Para containers
 
 ---
 
+## Erros conhecidos
+
+The following packages have unmet dependencies:
+containerd.io : Conflicts: containerd
+
+Código pra resolver: 
+``` bash
+sudo rm -f /etc/apt/sources.list.d/docker.list
+sudo apt-get update
+sudo apt-get purge -y containerd.io
+sudo apt-get autoremove -y
+```
+
+---
+
 ## ✍️ Créditos
 
 Este projeto foi idealizado e mantido por pesquisadores do **IFRN**, **UFRN**, **UFF**, **University of Coimbra** e **University of North Carolina**, como parte de experimentos sobre **Gêmeos Digitais e redes 6G**.
