@@ -9,6 +9,11 @@ setup:
 	fi
 	cd containernet && sudo ansible-playbook -i "localhost," -c local ansible/install.yml
 
+build-images:
+	@echo "[🐳] Construindo imagens locais do MidDiTS e IoT Simulator..."
+	docker build -t middts:latest ./middts
+	docker build -t iot_simulator:latest ./simulator
+
 topo:
 	@echo "[📡] Executando topologia com Containernet..."
 	sudo python3 topology/topo_qos.py
