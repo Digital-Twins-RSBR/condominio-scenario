@@ -76,27 +76,28 @@ echo "###############################################"
 if [ ! -d "containernet" ]; then
     echo "📥 Clonando repositório Containernet..."
     git clone https://github.com/containernet/containernet.git
-else
-    echo "🔄 Atualizando Containernet..."
-    cd containernet && git pull && cd ..
 fi
 
-# Symlink python → python3 (para evitar erros de script antigos)
-echo "🔗 Garantindo /usr/bin/python → python3"
-if ! [ -x /usr/bin/python ]; then
-    sudo ln -s /usr/bin/python3 /usr/bin/python
-fi
+cd containernet && git pull
+sudo ansible-playbook -i "localhost," -c local ansible/install.yml
 
-# Remover targets problemáticos do Makefile
-cd containernet
-echo "🧹 Limpando Makefile de targets problemáticos..."
-sed -i '/^all:/s/codecheck test//g' Makefile
-sed -i '/^codecheck:/,/^$/d' Makefile
-sed -i '/^test:/,/^$/d' Makefile
+echo "🧪 Criando ambiente Python e instalando Containernet no venv..."
+python3 -m venv venv
+source venv/bin/activate
+pip install -e . --no-binary :all:
 
-echo "🔧 Compilando Containernet..."
-sudo make
+echo "✅ Containernet instalado dentro do venv. Use 'source containernet/venv/bin/activate' antes de rodar topologia."
 cd ..
+# Remover targets problemáticos do Makefile
+# cd containernet
+# echo "🧹 Limpando Makefile de targets problemáticos..."
+# sed -i '/^all:/s/codecheck test//g' Makefile
+# sed -i '/^codecheck:/,/^$/d' Makefile
+# sed -i '/^test:/,/^$/d' Makefile
+
+# echo "🔧 Compilando Containernet..."
+# sudo make
+# cd ..
 
 echo ""
 echo "✅ Ambiente pronto! Agora rode:"
