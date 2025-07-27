@@ -1,57 +1,80 @@
 #!/bin/bash
 set -euo pipefail
-exec 2>setup.log
-echo "Início do setup: $(date)"
 
-log() { echo "[$(date +'%F %T')] $*"; }
+LOGFILE="setup.log"
+exec > >(tee -a "$LOGFILE") 2>&1
 
-log "🔧 [1/5] Atualizando APT e instalando dependências do sistema..."
-sudo rm -rf /var/lib/apt/lists/* || true
-sudo apt clean -qq
-log "[INFO] Executando apt update..."
-if ! sudo apt update -qq; then
-    log "[ERROR] Falha no apt update. Verifique sources list e logs."
-    exit 1
-fi
+echo "###############################################"
+echo "🔧 [1/5] Atualizando APT e instalando dependências..."
+echo "###############################################"
+sudo rm -rf /var/lib/apt/lists/*
+sudo apt-get clean
+echo "[INFO] Atualizando cache APT..."
+sudo apt-get update || { echo "[ERROR] 'apt update' falhou."; exit 1; }
+echo "[INFO] Instalando ferramentas base..."
+sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release software-properties-common || { echo "[ERROR] falha ao instalar ferramentas base."; exit 1; }
 
-log "[INFO] Instalando pacotes essenciais..."
-sudo apt install -y ansible git python3-pip python3-venv docker.io docker-compose || {
-    log "[ERROR] Falha instalar pacotes essenciais."; exit 1; }
+echo ""
+echo "###############################################"
+echo "📦 [2/5] (Re)configurando repositório Docker..."
+echo "###############################################"
+sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.gpg
+echo "[INFO] Baixando chave GPG Docker..."
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg || { echo "[ERROR] falha ao baixar chave GPG Docker."; exit 1; }
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+echo "[INFO] Adicionando repositório Docker para $(lsb_release -cs)..."
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-log "✅ Dependências de base instaladas."
+echo "[INFO] Atualizando APT com repo Docker..."
+sudo apt-get update || { echo "[ERROR] 'apt update' falhou após adicionar Docker repo."; exit 1; }
 
-log "🧪 [2/5] Habilitando Docker..."
+echo "[INFO] Instalando Docker Engine..."
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin || { echo "[ERROR] falha na instalação do Docker."; exit 1; }
+
+echo ""
+echo "###############################################"
+echo "🧪 [3/5] Verificando serviço Docker..."
+echo "###############################################"
+sudo systemctl enable docker
+sudo systemctl start docker
+sleep 2
 if ! sudo systemctl is-active --quiet docker; then
-    sudo systemctl start docker
-    sudo systemctl enable docker
-    log "[INFO] Docker iniciado e habilitado."
-else
-    log "[INFO] Docker já está ativo."
+  echo "[ERROR] Docker não está ativo."; exit 1
 fi
-sudo groupadd -f docker
-sudo usermod -aG docker "$USER"
+echo "[INFO] Docker está funcionando (teste 'hello-world')..."
+sudo docker run --rm hello-world >/dev/null 2>&1 && echo "[INFO] Docker OK" || { echo "[ERROR] teste 'hello-world' falhou."; exit 1; }
 
-log "📦 [3/5] Clonando/atualizando Containernet..."
+echo ""
+echo "###############################################"
+echo "📥 [4/5] Instalando Containernet via Ansible + pip3..."
+echo "###############################################"
+
 if [ ! -d "containernet" ]; then
-    git clone https://github.com/containernet/containernet.git || {
-        log "[ERROR] Clone Containernet falhou."; exit 1; }
+  echo "[INFO] Clonando Containernet..."
+  git clone https://github.com/containernet/containernet.git || { echo "[ERROR] clone Containernet falhou."; exit 1; }
 else
-    (cd containernet && git pull --ff-only) || {
-        log "[ERROR] git pull falhou."; exit 1; }
+  echo "[INFO] Atualizando Containernet (git pull)..."
+  cd containernet && git pull || { echo "[ERROR] git pull falhou."; exit 1; } && cd ..
 fi
 
-log "🩹 Corrigindo Makefile problemático..."
+echo "[INFO] Executando playbook Ansible..."
 cd containernet
-sed -i '/^all:/s/codecheck//g' Makefile
-sed -i '/^codecheck:/,/^$/d' Makefile
-sed -i '/^all:/s/test//g' Makefile
-sed -i '/^test:/,/^$/d' Makefile
+ANSIBLE_PYTHON_INTERPRETER=$(which python3) sudo ansible-playbook -i "localhost," -c local ansible/install.yml \
+  || { echo "[ERROR] ansible-playbook falhou. Consulte $LOGFILE"; exit 1; }
 
-log "🔧 Compilando Containernet..."
-if ! sudo make -j "$(nproc)"; then
-    log "[ERROR] Build Containernet falhou."; exit 1; fi
+echo "[INFO] Instalando Containernet no pip (virtualenv)..."
+python3 -m venv venv_cn || { echo "[ERROR] criação virtualenv falhou."; exit 1; }
+source venv_cn/bin/activate
+pip install --no-binary :all: . || { echo "[ERROR] pip install containernet falhou."; deactivate; exit 1; }
+deactivate
 cd ..
 
-log "✅ Containernet instalado com sucesso."
-log "🏁 Setup concluído. Confira logs em setup.log"
-exit 0
+echo ""
+echo "###############################################"
+echo "✅ [5/5] Setup concluído com sucesso!"
+echo "###############################################"
+echo "✅ Veja logs em '$LOGFILE'."
+echo ""
+echo "👉 Agora rode usando: make setup build-images topo draw"
