@@ -12,6 +12,10 @@ echo "🧾 Criando arquivo sources.list do PostgreSQL..."
 sudo sh -c "echo 'deb [signed-by=/etc/apt/trusted.gpg.d/postgresql.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main' \
   > /etc/apt/sources.list.d/pgdg.list"
 
+echo "🔧 Corrigindo possíveis entradas conflitantes do PostgreSQL..."
+sudo rm -f /etc/apt/sources.list.d/pgdg.list
+sudo rm -f /etc/apt/sources.list.d/pgdg.sources
+
 sudo apt update
 sudo apt install -y ansible git python3-pip python3-venv docker.io docker-compose socat net-tools openjdk-11-jdk curl wget bridge-utils iproute2 tcpdump python3-dev libffi-dev libssl-dev graphviz xterm
 

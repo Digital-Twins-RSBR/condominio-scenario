@@ -1,16 +1,12 @@
 .PHONY: setup build-images topo draw clean
 
 setup:
-	@echo "[Setup] Limpando cache apt e configurando PostgreSQL..."
-	sudo rm -rf /var/lib/apt/lists/* && sudo apt clean
-	@echo "🔧 Adicionando chave PostgreSQL e configurando repositório..."
-	sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-	    | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.asc
-	. /etc/os-release && \
-	sudo sh -c "echo 'deb [signed-by=/etc/apt/trusted.gpg.d/postgresql.asc] https://apt.postgresql.org/pub/repos/apt $${VERSION_CODENAME}-pgdg main' \
-	   > /etc/apt/sources.list.d/pgdg.list"
-	@echo "📦 Executando apt update..."
-	sudo apt update
+	@echo "[Setup] Limpando entradas de repositórios conflitantes..."
+	sudo rm -f /etc/apt/sources.list.d/pgdg.list
+	sudo rm -f /etc/apt/sources.list.d/pgdg.sources
+	@echo "[Setup] Atualizando apt..."
+	sudo apt update || (echo "❌ apt update falhou" && exit 1)
+	@echo "[Setup] Instalando Containernet via Ansible..."
 	cd containernet && ansible-playbook -i "localhost," -c local ansible/install.yml
 
 build-images:
