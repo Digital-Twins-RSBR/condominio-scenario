@@ -6,6 +6,13 @@ setup:
 	sudo rm -f /etc/apt/sources.list.d/pgdg.sources
 	@echo "[Setup] Atualizando apt..."
 	sudo apt update || (echo "❌ apt update falhou" && exit 1)
+	@echo "[Docker] inicia Docker..."
+	sudo systemctl enable docker
+	sudo systemctl start docker
+	@echo "[Docker] docker adiciona usuário ao grupo..."
+	sudo groupadd -f docker
+	sudo usermod -aG docker $(USER)
+	docker context use default || true
 	@echo "[Setup] Instalando Containernet via Ansible..."
 	cd containernet && ansible-playbook -i "localhost," -c local ansible/install.yml
 
