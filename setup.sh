@@ -19,14 +19,8 @@ sudo rm -f /etc/apt/sources.list.d/pgdg.sources
 sudo apt update
 sudo apt install -y ansible git python3-pip python3-venv docker.io docker-compose socat net-tools openjdk-11-jdk curl wget bridge-utils iproute2 tcpdump python3-dev libffi-dev libssl-dev graphviz xterm
 
-echo "🧪 Iniciando e habilitando docker..."
+echo "🧪 Verificando Docker..."
 sudo systemctl enable --now docker
-sudo systemctl start docker
-echo "✅ Adicionando usuário ao grupo docker..."
-sudo groupadd -f docker
-sudo usermod -aG docker "$USER"
-newgrp docker
-echo "✅ Docker pronto para uso sem sudo."
 
 echo "📦 Carregando variáveis do .env..."
 if [ -f .env ]; then export $(grep -v '^#' .env | xargs); else echo ".env não encontrado"; exit 1; fi
