@@ -7,11 +7,11 @@ echo "🔧 [1/5] Instalando dependências do sistema..."
 echo "###############################################"
 
 echo "[✓] Garantindo permissão de execução para os scripts..."
-find scripts/ -type f -name "*.sh" -exec chmod +x {} \;
+find scripts/ -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
 
 sudo apt update
 
-# Dependências para Containernet e ambiente de simulação
+# Dependências para Containernet e Docker
 sudo apt install -y \
     ansible \
     python3-pip \
@@ -35,15 +35,16 @@ sudo apt install -y \
     libffi-dev \
     libssl-dev \
     graphviz \
-    xterm
+    xterm \
+    python3-networkx \
+    python3-matplotlib
 
 echo ""
-echo "✅ [✓] Dependências instaladas com sucesso."
-echo ""
+echo "✅ Dependências instaladas com sucesso."
 
 echo ""
 echo "###############################################"
-echo "🧪 Verificando se o Docker está em execução..."
+echo "🧪 Verificando Docker..."
 echo "###############################################"
 
 if ! sudo systemctl is-active --quiet docker; then
@@ -56,55 +57,48 @@ fi
 
 echo ""
 echo "###############################################"
-echo "📦 [2/5] Carregando variáveis do arquivo .env..."
+echo "📦 [2/5] Carregando variáveis do .env (se existir)..."
 echo "###############################################"
 
 ENV_FILE=".env"
 if [ -f "$ENV_FILE" ]; then
-    echo "🗂️  Carregando variáveis de $ENV_FILE..."
+    echo "🗂️  Carregando variáveis..."
     export $(grep -v '^#' "$ENV_FILE" | xargs)
 else
-    echo "❌ Arquivo .env não encontrado. Abortando."
-    exit 1
+    echo "⚠️  Arquivo .env não encontrado. Prosseguindo com valores padrão."
 fi
 
 echo ""
 echo "###############################################"
-echo "🛠️  [3/5] Instalando Containernet..."
+echo "🛠️  [3/5] Clonando e Instalando Containernet..."
 echo "###############################################"
 
 if [ ! -d "containernet" ]; then
     echo "📥 Clonando repositório Containernet..."
     git clone https://github.com/containernet/containernet.git
 else
-    echo "✅ Containernet já está clonado. Atualizando..."
+    echo "🔄 Atualizando Containernet..."
     cd containernet && git pull && cd ..
 fi
 
-echo "🔧 Garantindo link simbólico: /usr/bin/python → /usr/bin/python3"
+# Symlink python → python3 (para evitar erros de script antigos)
+echo "🔗 Garantindo /usr/bin/python → python3"
 if ! [ -x /usr/bin/python ]; then
     sudo ln -s /usr/bin/python3 /usr/bin/python
 fi
 
-echo "🩹 Removendo dependência do codecheck no Makefile (evita erro com Python moderno)..."
+# Remover targets problemáticos do Makefile
 cd containernet
-
-echo "🩹 Limpando targets problemáticos do Makefile (removendo 'codecheck' se existir)..."
-sed -i '/^all:/s/codecheck//g' Makefile
+echo "🧹 Limpando Makefile de targets problemáticos..."
+sed -i '/^all:/s/codecheck test//g' Makefile
 sed -i '/^codecheck:/,/^$/d' Makefile
-
-echo "🩹 Limpando targets problemáticos do Makefile (removendo 'test' se existir)..."
-sed -i '/^all:/s/test//g' Makefile
 sed -i '/^test:/,/^$/d' Makefile
 
-echo "🔧 Compilando e instalando Containernet com make..."
+echo "🔧 Compilando Containernet..."
 sudo make
 cd ..
 
 echo ""
-echo "###############################################"
-echo "🏁 [5/5] Ambiente pronto!"
-echo "###############################################"
-echo "✅ Todos os componentes foram preparados com sucesso."
-echo ""
-echo "👉 Agora use: make topo  (ou sudo python3 containernet/topo_qos.py) para iniciar o cenário."
+echo "✅ Ambiente pronto! Agora rode:"
+echo "👉 make build-images"
+echo "👉 make topo"

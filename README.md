@@ -38,7 +38,11 @@ nano .env  # Edite com URLs dos repositórios
 
 ```bash
 chmod +x setup.sh
-./setup.sh
+
+./setup.sh        # Instala tudo e configura Containernet
+make setup        # Clona/atualiza MiddTS e Simulator
+make install      # Instala dependências
+make build-images # Compila as imagens Docker locais
 ```
 
 Isso irá:
@@ -54,20 +58,33 @@ Isso irá:
 ### Topologia com QoS (3 caminhos por simulador)
 
 ```bash
-sudo python3 topology/topo_qos.py
-
-# ou então
-
+# Interativo
 make topo
+
+# Em background (com screen):
+make net-qos    # Sobe topologia em screen
+make net-cli    # Volta à CLI da sessão quando quiser
+
+# Para parar e limpar
+make net-clean
 ```
 
-A topologia conterá:
-- 100 hosts simuladores (`sim_001` a `sim_100`)
-- Host `tb` (ThingsBoard)
-- Host `middts` (MidDiTS)
-- Cada simulador terá 3 links para `tb`, com diferentes características de QoS (URLLC, eMBB, Best Effort)
+## 🎯 O que acontece na topologia:
+
+- Um container Docker executa o ThingsBoard (imagem thingsboard/tb:<versão>).
+- Outro container roda o MidDiTS (imagem middts:latest).
+- SIMULATOR_COUNT containers iot_simulator:latest simulam casas/dispositivos.
+- Cada simulador gera três links com QoS (URLLC, eMBB, Best Effort) até o ThingsBoard.
+- Link dedicado conecta ThingsBoard ↔ MidDiTS.
 
 ---
+
+## 🎯 Visualizando o desenho da topologia
+
+- Seção futura
+
+---
+
 
 ## 🧠 Interagindo com a Rede
 
