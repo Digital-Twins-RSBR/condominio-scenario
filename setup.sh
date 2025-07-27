@@ -1,71 +1,68 @@
 #!/bin/bash
-set -euo pipefail
+set -e
 LOGFILE="setup.log"
 exec > >(tee -a "$LOGFILE") 2>&1
 
 echo "###############################################"
-echo "🔧 [1/6] Removendo versões conflitantes de Docker"
+echo "🔧 [1/6] Atualizando apt e instalando dependências base"
 echo "###############################################"
-sudo apt-get remove -y docker docker-engine docker.io docker-compose docker-compose-v2 podman-docker containerd runc containerd.io || true
-sudo rm -rf /var/lib/docker /var/lib/containerd
-
-echo ""
-echo "###############################################"
-echo "🔐 [2/6] Adicionando chave GPG oficial e repositório Docker"
-echo "###############################################"
-sudo apt-get update -y
-sudo apt-get install -y ca-certificates curl gnupg lsb-release
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
-  sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
-
-UBU_CODENAME="$(. /etc/os-release && echo "$VERSION_CODENAME")"
-echo "Utilizando codename Ubuntu: $UBU_CODENAME"
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-  https://download.docker.com/linux/ubuntu \
-  $UBU_CODENAME stable" | sudo tee /etc/apt/sources.list.d/docker.list
-
-if ! sudo apt-get update -y; then
-  echo "[ERROR] erro no 'apt update' — verifique $LOGFILE"
+sudo rm -rf /var/lib/apt/lists/*
+sudo apt clean
+if ! sudo apt update; then
+  echo "[ERROR] apt update falhou — verifique repositórios" >&2
   exit 1
 fi
+sudo apt install -y ansible python3-pip python3-venv make git curl wget \
+  docker.io containerd.io docker-compose-plugin socat net-tools bridge-utils \
+  iproute2 tcpdump python3-dev libffi-dev libssl-dev graphviz xterm unzip
 
-echo ""
 echo "###############################################"
-echo "🧪 [3/6] Instalando Docker Engine e Compose"
+echo "🧪 [2/6] Verificando Docker e permissões"
 echo "###############################################"
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || {
-  echo "[ERROR] falha ao instalar docker-ce ou containerd.io, verifique conflitos"
-  exit 1
-}
-
-echo ""
-echo "🧾 [4/6] Adicionando usuário ao grupo docker (para evitar sudo)"
-echo "###############################################"
+if ! sudo systemctl is-active --quiet docker; then
+  echo "[INFO] Ativando Docker..."
+  sudo systemctl start docker && sudo systemctl enable docker
+fi
 sudo groupadd -f docker
-sudo usermod -aG docker "$USER" || true
-echo "Agora reinicie sua sessão para aplicar o grupo docker."
+sudo usermod -aG docker "$USER"
 
-echo ""
 echo "###############################################"
-echo "📦 [5/6] Clonando e instalando Containernet via Ansible"
+echo "📦 [3/6] Gerenciando repositórios APT problemáticos"
+echo "###############################################"
+# Corrige fontes problemáticas do Docker
+if grep -R "duplicate" /etc/apt/sources.list.d; then
+  sudo rm /etc/apt/sources.list.d/docker*.list
+  echo "[INFO] Removidos .list conflitantes do Docker"
+fi
+
+echo "###############################################"
+echo "🛠️  [4/6] Instalando ou atualizando Containernet via Ansible"
 echo "###############################################"
 if [ ! -d "containernet" ]; then
+  echo "[INFO] Clonando Containernet..."
   git clone https://github.com/containernet/containernet.git
 else
+  echo "[INFO] Atualizando Containernet existente..."
   cd containernet && git pull && cd ..
 fi
+
 cd containernet
-if ! ansible-playbook -i "localhost," -c local ansible/install.yml; then
-  echo "[ERROR] falha no Ansible-install — revisar comandos e rede";
+
+# Limpando pasta openflow para evitar conflitos
+if [ -d "openflow" ]; then
+  echo "[WARN] Diretório 'openflow' já existe — removendo para rebuild"
+  rm -rf openflow
+fi
+
+echo "[INFO] Executando playbook de instalação"
+if ! sudo ansible-playbook -i "localhost," -c local ansible/install.yml; then
+  echo "[ERROR] Falha na instalação pelo Ansible — verifique $LOGFILE" >&2
   exit 1
 fi
+
 cd ..
 
-echo ""
 echo "###############################################"
 echo "✅ [6/6] Setup concluído com sucesso!"
-echo "Veja logs em $LOGFILE"
+echo "Log completo em: $LOGFILE"
 echo "Use: make setup build-images topo draw"
