@@ -6,7 +6,23 @@ setup:
 
 build-images:
 	@echo "[🐳] Construindo imagens Docker"
+	@if [ -d "middts" ]; then \
+		echo "[📥] Atualizando repositório middleware-dt..."; \
+		cd middts && git pull; \
+	else \
+		echo "[📥] Clonando repositório middleware-dt..."; \
+		git clone git@github.com:Digital-Twins-RSBR/middleware-dt.git; \
+		mv middleware-dt middts; \
+	fi
 	docker build -t middts:latest ./middts
+	@if [ -d "simulator" ]; then \
+		echo "[📥] Atualizando repositório iot_simulator..."; \
+		cd simulator && git pull; \
+	else \
+		echo "[📥] Clonando repositório iot_simulator..."; \
+		git clone git@github.com:Digital-Twins-RSBR/iot_simulator.git; \
+		mv iot_simulator simulator; \
+	fi
 	docker build -t iot_simulator:latest ./simulator
 
 topo:
