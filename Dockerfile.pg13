@@ -1,0 +1,6 @@
+FROM postgres:13
+
+# Instala utilitários extras
+RUN apt-get update && \
+    apt-get install -y iproute2 iputils-ping net-tools procps iptables curl tcpdump inetutils-traceroute dnsutils lsof nano less vim socat iperf3 netcat-openbsd && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*

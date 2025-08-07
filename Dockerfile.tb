@@ -1,0 +1,25 @@
+FROM thingsboard/tb-node:4.1.0
+
+USER root
+RUN apt-get update && \
+    apt-get install -y \
+        iproute2 \
+        iputils-ping \
+        net-tools \
+        procps \
+        iptables \
+        curl \
+        tcpdump \
+        postgresql-client \
+        inetutils-traceroute \
+        dnsutils \
+        lsof \
+        nano \
+        less \
+        vim \
+        socat \
+        iperf3 \
+        netcat-openbsd \
+        && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+CMD ["/bin/bash"]
