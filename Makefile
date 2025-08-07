@@ -118,3 +118,12 @@ check-simulators:
 clean-containers:
 	docker ps -a --filter "name=mn." -q | xargs -r docker rm -f
 
+reset-db:
+    @echo "Removendo volume do banco de dados ThingsBoard (tb_db_data)..."
+    -docker volume rm tb_db_data
+    @echo "Volume removido. O banco será recriado limpo no próximo start."
+
+reset-tb:
+    @echo "Removendo volumes do ThingsBoard (tb_db_data, tb_assets, tb_logs)..."
+    -docker volume rm tb_db_data tb_assets tb_logs
+    @echo "Volumes removidos. O banco e dados do TB serão recriados limpos no próximo start."
