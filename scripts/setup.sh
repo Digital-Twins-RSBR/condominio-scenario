@@ -36,25 +36,24 @@ docker volume create tb_logs
 echo "###############################################"
 echo "📦 [4/7] Clonando/Atualizando Containernet"
 echo "###############################################"
-if [ ! -d containernet ]; then
-  git clone https://github.com/containernet/containernet.git
-  cd containernet
+if [ ! -d services/containernet ]; then
+  git clone https://github.com/containernet/containernet.git services/containernet
 else
-  cd containernet && git pull && cd ..
+  cd services/containernet && git pull && cd -
 fi
 
 echo "✅ Containernet atualizado."
 
 echo "###############################################"
-echo "🩹 [5/7] Instalando Containernet em virtualenv"
+echo "🩹 [5/7] Instalando Containernet em virtualenv (services/containernet/venv)"
 echo "###############################################"
-
+cd services/containernet
 python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip setuptools wheel
-pip install -e ./containernet || { echo "[ERROR] pip install Containernet falhou"; exit 1; }
+pip install -e ./containernet || { echo \"[ERROR] pip install Containernet falhou\"; exit 1; }
 deactivate
-cd ..
+cd -
 echo "✅ Containernet instalado com sucesso."
 
 echo "###############################################"

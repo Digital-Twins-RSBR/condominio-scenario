@@ -1,2 +1,0 @@
-# Testa o ping entre o container tb para o tb-db
-tb ping -c 3 tb-db

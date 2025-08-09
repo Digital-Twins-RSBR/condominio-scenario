@@ -1,0 +1,10 @@
+# Esse arquivo mostra os principais comandos que usamos no containernet para acompanhar a topologia criada
+# Testa o ping entre o container tb para o db
+tb ping -c 3 db
+
+# Exibe todos os nodes
+nodes
+# Exibe as ligações entre os nodes e os switchs
+links
+
+# Comando mininet para exibir

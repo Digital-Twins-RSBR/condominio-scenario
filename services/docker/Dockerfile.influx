@@ -1,0 +1,6 @@
+# Dockerfile.influxdb-tools
+FROM influxdb:2.7
+
+RUN apt-get update && \
+    apt-get install -y iputils-ping iproute2 netcat-openbsd dnsutils curl && \
+    rm -rf /var/lib/apt/lists/*
