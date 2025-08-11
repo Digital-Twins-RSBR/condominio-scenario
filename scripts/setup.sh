@@ -1,7 +1,13 @@
 #!/bin/bash
 set -e
-LOG="setup.log"
+
+LOG="scripts/setup.log"
 exec > >(tee -a "$LOG") 2>&1
+
+# Carregar variáveis do .env
+set -a
+[ -f .env ] && . .env
+set +a
 
 echo "###############################################"
 echo "🔧 [1/7] Atualizando apt e instalando dependências básicas"
@@ -34,12 +40,28 @@ docker volume create tb_assets
 docker volume create tb_logs
 
 echo "###############################################"
-echo "📦 [4/7] Clonando/Atualizando Containernet"
+echo "📦 [4/7] Clonando/Atualizando Containernet, Middts e Simulator"
 echo "###############################################"
+
+# Containernet
 if [ ! -d services/containernet ]; then
   git clone https://github.com/containernet/containernet.git services/containernet
 else
   cd services/containernet && git pull && cd -
+fi
+
+# Middts
+if [ ! -d services/middleware-dt ]; then
+  git clone "$MIDDTS_REPO_URL" services/middleware-dt
+else
+  cd services/middleware-dt && git pull && cd -
+fi
+
+# Simulator
+if [ ! -d services/iot_simulator ]; then
+  git clone "$SIMULATOR_REPO_URL" services/iot_simulator
+else
+  cd services/iot_simulator && git pull && cd -
 fi
 
 echo "✅ Containernet atualizado."
@@ -51,7 +73,7 @@ cd services/containernet
 python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip setuptools wheel
-pip install -e ./containernet || { echo \"[ERROR] pip install Containernet falhou\"; exit 1; }
+pip install -e . || { echo "[ERROR] pip install Containernet falhou"; exit 1; }
 deactivate
 cd -
 echo "✅ Containernet instalado com sucesso."

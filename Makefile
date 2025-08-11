@@ -11,9 +11,9 @@ NEO4J_IMAGE = neo4j-tools:latest
 PARSER_IMAGE = parserwebapi-tools:latest
 INFLUX_IMAGE = influxdb-tools:latest
 
-MIDDTS_PATH = services/middts/middts
-SIMULATOR_PATH = services/simulator/simulator
-DOCKER_PATH = services/docker
+MIDDTS_PATH = services/middleware-dt/
+SIMULATOR_PATH = services/iot_simulator/
+DOCKER_PATH = dockerfiles
 # === SETUP E LIMPEZA ===
 .PHONY: setup clean clean-veth clean-containers reset-db reset-tb
 
@@ -54,14 +54,13 @@ reset-tb:
 
 build-images:
 	@echo "[🐳] Construindo imagens Docker personalizadas"
-	docker build -t $(MIDDTS_IMAGE) -f $(MIDDTS_PATH)/Dockerfile $(MIDDTS_PATH)
-	docker build -t $(MIDDTS_CUSTOM_IMAGE) -f $(DOCKER_PATH)/Dockerfile.middts $(MIDDTS_PATH)
-	docker build -t $(IOT_SIM_IMAGE) -f $(SIMULATOR_PATH)/Dockerfile $(SIMULATOR_PATH)
+	docker build -t $(MIDDTS_CUSTOM_IMAGE) -f $(DOCKER_PATH)/Dockerfile.middts services/
+	docker build -t $(IOT_SIM_IMAGE) -f $(DOCKER_PATH)/Dockerfile.iot_simulator services/
 	docker build -t $(TB_IMAGE) -f $(DOCKER_PATH)/Dockerfile.tb services/
 	docker build -t $(PG_IMAGE) -f $(DOCKER_PATH)/Dockerfile.pg13 services/
-	docker build -t $(NEO4J_IMAGE) -f $(DOCKER_PATH)/Dockerfile.neo4j services/middts
-	docker build -t $(PARSER_IMAGE) -f $(DOCKER_PATH)/Dockerfile.parser services/middts
-	docker build -t $(INFLUX_IMAGE) -f $(DOCKER_PATH)/Dockerfile.influx services/middts
+	docker build -t $(NEO4J_IMAGE) -f $(DOCKER_PATH)/Dockerfile.neo4j services/
+	docker build -t $(PARSER_IMAGE) -f $(DOCKER_PATH)/Dockerfile.parser services/
+	docker build -t $(INFLUX_IMAGE) -f $(DOCKER_PATH)/Dockerfile.influx services/
 	
 # === TOPOLOGIA E VISUALIZAÇÃO ===
 .PHONY: topo topo-debug topo-screen draw

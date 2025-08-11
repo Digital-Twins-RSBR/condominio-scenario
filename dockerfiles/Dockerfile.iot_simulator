@@ -1,0 +1,26 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /iot_simulator
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+       iproute2 iputils-ping net-tools procps iptables curl tcpdump \
+       inetutils-traceroute dnsutils lsof nano less vim socat iperf3 netcat-openbsd && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Instala dependencies
+COPY services/iot_simulator/requirements/ requirements/
+RUN pip install --no-cache-dir -r requirements/base.txt
+
+# Copia código do simulador
+COPY services/iot_simulator/ .
+
+ENV DJANGO_SETTINGS_MODULE=iot_simulator.settings
+
+COPY services/iot_simulator/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

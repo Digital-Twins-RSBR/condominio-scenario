@@ -28,6 +28,29 @@ def wait_for_pg_tcp(container, timeout=60):
     info(container.cmd("cat /var/log/postgresql/postgresql*.log || echo '[WARN] Sem log PostgreSQL.'\n"))
     return False
 
+def tb_has_any_table(pg_container, retries=6, delay=2, min_tables=5):
+    """Retorna True se existir pelo menos min_tables tabelas 'normais' (relkind='r') no schema public.
+    Usa heredoc para evitar problemas de quoting no ambiente Containernet.
+    Considera que uma instalação válida do ThingsBoard cria dezenas de tabelas; threshold >=5 evita falsos positivos.
+    """
+    sql = "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r';"
+    for attempt in range(1, retries+1):
+        cmd = ("bash -c \"PGPASSWORD=tb timeout 5s psql -U tb -d thingsboard -Atq <<'SQL' 2>&1 || echo FAIL\n" +
+               sql + "\nSQL\n" +
+               "\"")
+        raw = pg_container.cmd(cmd)
+        out = raw.strip().splitlines()
+        # Filtra linhas que são apenas número
+        nums = [l.strip() for l in out if l.strip().isdigit()]
+        val = int(nums[-1]) if nums else -1
+        info(f"[tb][CHECK] Tentativa {attempt} tabelas_public={val} raw='{raw.strip()[:120]}'\n")
+        if val >= min_tables:
+            return True
+        if val == 0:
+            return False  # banco claramente vazio
+        time.sleep(delay)
+    return False
+
 def run_topo(num_sims=5):
     setLogLevel('info')
     cleanup_containers()
@@ -128,8 +151,8 @@ def run_topo(num_sims=5):
         privileged=True
     )
     # === Prepara .env do middts com os IPs reais das dependências ===
-    env_example_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../middts/middts/.env.example'))
-    env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../middts/middts/.env'))
+    env_example_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../middleware-dt/.env.example'))
+    env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../middleware-dt/.env'))
     # IPs das dependências
     POSTGRES_HOST = '10.10.2.10'  # IP do postgres na rede do middts
     NEO4J_URL = 'bolt://10.10.2.30:7687'
@@ -160,7 +183,7 @@ def run_topo(num_sims=5):
         environment={
             'DJANGO_SETTINGS_MODULE': 'middleware_dt.settings'
         },
-        volumes=[f'{os.path.abspath(os.path.join(os.path.dirname(__file__), '../../middts/middts/.env'))}:/middleware-dt/.env'],
+        volumes=[f'{os.path.abspath(os.path.join(os.path.dirname(__file__), '../../middleware-dt/.env'))}:/middleware-dt/.env'],
         privileged=True
     )
 
@@ -301,16 +324,22 @@ def run_topo(num_sims=5):
         return
 
 
-    # Só roda install.sh se não estiver instalado
-    info("[tb] Checando se ThingsBoard já está instalado...\n")
-    install_check = tb.cmd('test -f /data/.tb_initialized && echo INSTALLED || echo NOT_INSTALLED').strip()
-    if install_check == 'NOT_INSTALLED':
-        info("[tb] Iniciando ThingsBoard manualmente (primeira instalação, pode demorar ~1 min.)\n")
-        install_output = tb.cmd('/usr/share/thingsboard/bin/install/install.sh --loadDemo')
+    # Inicialização simplificada do ThingsBoard
+    info("[tb] Verificando se já existem tabelas ThingsBoard no PostgreSQL...\n")
+    has_tables = tb_has_any_table(pg)
+    info(f"[tb] Resultado verificação tabelas: has_tables={has_tables}\n")
+    if not has_tables:
+        info("[tb] Nenhuma (ou poucas) tabelas detectadas -> executando install.sh...\n")
+        tb.cmd('rm -f /data/.tb_initialized')
+        install_output = tb.cmd('/usr/share/thingsboard/bin/install/install.sh --loadDemo 2>&1 | tee /tmp/install.log')
         info("[tb] Saída do install.sh:\n" + install_output + "\n")
+        if ('already present in database' in install_output or 'User with email' in install_output):
+            info("[tb] Instalação pré-existente detectada durante install.sh, marcando como inicializado.\n")
         tb.cmd('touch /data/.tb_initialized')
     else:
-        info("[tb] ThingsBoard já instalado, pulando install.sh\n")
+        info("[tb] Tabelas já existem -> pulando install.sh.\n")
+        tb.cmd('touch /data/.tb_initialized')
+    info("[tb] Iniciando thingsboard.jar em background\n")
     tb.cmd('java -jar /usr/share/thingsboard/bin/thingsboard.jar > /var/log/thingsboard/manual_start.log 2>&1 &')
 
     info("*** Esperando ThingsBoard inicializar (60s)\n")

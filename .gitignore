@@ -12,6 +12,7 @@ build/
 *.log
 .env
 .env.*
+venv/
 
 # VSCode
 .vscode/

@@ -14,8 +14,8 @@ Este repositório fornece um ambiente completo e reprodutível para simulações
 ```bash
 topology/                 # Arquivos de topologia (topo.py, topo_qos.py, draw_topology.py)
 scripts/                  # Scripts utilitários (instalação, montagem de volumes, etc.)
-middts/                   # Repositório clonado do MidDiTS
-simulator/                # Repositório clonado do IoT Simulator
+middleware-dt/                   # Repositório clonado do MidDiTS
+iot_simulator/                # Repositório clonado do IoT Simulator
 setup.sh                  # Script para instalação completa
 Makefile                  # Automação dos comandos
 .env.example              # Arquivo com variáveis de configuração
@@ -26,6 +26,8 @@ Makefile                  # Automação dos comandos
 ## 🚀 Como usar
 
 ### 1. Clonar este repositório e preparar o `.env`
+Você pode clonar o repositório direto ou adicionar uma chave ssh
+para poder baixar os repositórios do middts e do simulator.
 
 ```bash
 git clone https://github.com/seu-usuario/condominio-scenario.git
