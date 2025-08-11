@@ -16,11 +16,11 @@ RUN apt-get update && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Copia e instala apenas requirements primeiro (melhor cache)
-COPY services/middleware-dt/requirements/ requirements/
+COPY middleware-dt/requirements/ requirements/
 RUN pip install --no-cache-dir -r requirements/base.txt
 
 # Copia código da aplicação (apenas pasta específica)
-COPY services/middleware-dt/ .
+COPY middleware-dt/ .
 
 # Symlink para contornar nome de pacote com hífen, se necessário
 RUN ln -sf /middleware-dt /middleware_dt
@@ -29,7 +29,7 @@ ENV DJANGO_SETTINGS_MODULE=middleware-dt.settings
 
 EXPOSE 8000
 
-COPY services/middleware-dt/entrypoint.sh /entrypoint.sh
+COPY middleware-dt/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=5 CMD curl -fsS http://localhost:8000/health/ || exit 1

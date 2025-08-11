@@ -181,7 +181,7 @@ def run_topo(num_sims=5):
         ports=[8000],
         port_bindings={8000: 8000},
         environment={
-            'DJANGO_SETTINGS_MODULE': 'middleware_dt.settings'
+            'DJANGO_SETTINGS_MODULE': 'middleware-dt.settings'
         },
         volumes=[f'{os.path.abspath(os.path.join(os.path.dirname(__file__), '../../middleware-dt/.env'))}:/middleware-dt/.env'],
         privileged=True

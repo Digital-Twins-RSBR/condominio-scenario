@@ -12,15 +12,15 @@ RUN apt-get update && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Instala dependencies
-COPY services/iot_simulator/requirements/ requirements/
+COPY iot_simulator/requirements/ requirements/
 RUN pip install --no-cache-dir -r requirements/base.txt
 
 # Copia código do simulador
-COPY services/iot_simulator/ .
+COPY iot_simulator/ .
 
 ENV DJANGO_SETTINGS_MODULE=iot_simulator.settings
 
-COPY services/iot_simulator/entrypoint.sh /entrypoint.sh
+COPY iot_simulator/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
