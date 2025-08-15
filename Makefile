@@ -63,24 +63,20 @@ build-images:
 	docker build -t $(INFLUX_IMAGE) -f $(DOCKER_PATH)/Dockerfile.influx services/
 	
 # === TOPOLOGIA E VISUALIZAÇÃO ===
-.PHONY: topo topo-debug topo-screen draw
+.PHONY: topo topo-screen draw
 
 topo:
 	@echo "[📡] Executando topologia com Containernet"
-	bash -c 'source services/containernet/venv/bin/activate && sudo -E env PATH="$$PATH" python3 services/topology/topology/topo_qos.py'
-
-topo-debug:
-	@echo "[📡] Executando topologia com Containernet"
-	bash -c 'source services/containernet/venv/bin/activate && sudo -E env PATH="$$PATH" python3 services/topology/topology/topo_qos_debug.py'
+	bash -c 'source services/containernet/venv/bin/activate && sudo -E env PATH="$$PATH" python3 services/topology/topo_qos.py'
 
 topo-screen:
 	@echo "[📡] Executando topologia com Containernet em screen"
-	screen -S containernet -dm bash -c 'source services/containernet/venv/bin/activate && sudo -E env PATH="$$PATH" python3 services/topology/topology/topo_qos.py'
+	screen -S containernet -dm bash -c 'source services/containernet/venv/bin/activate && sudo -E env PATH="$$PATH" python3 services/topology/topo_qos.py'
 	@echo "Use: screen -r containernet  para acessar o CLI do Containernet"
 
 draw:
 	@echo "[🖼️ ] Gerando visualização da topologia"
-	bash -c 'python3 services/topology/topology/draw_topology.py'
+	bash -c 'python3 services/topology/draw_topology.py'
 
 # === VERIFICAÇÕES DE STATUS E REDE ===
 .PHONY: check-tb check-middts check-db check-influxdb check-neo4j check-parser check-simulator check-simulators check-network check-tb-internal

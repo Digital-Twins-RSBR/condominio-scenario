@@ -15,16 +15,20 @@ def cleanup_containers():
     subprocess.run("docker volume rm tb_assets tb_logs", shell=True)
 
 
-def wait_for_pg_tcp(container, timeout=60):
-    info("🔍 Verificando inicialização via TCP na porta 5432...\n")
-    for i in range(timeout):
-        result = container.cmd("pg_isready -h 10.0.0.10 -p 5432 -U tb || echo NOK").strip()
-        info(f"[{i+1}s] pg_isready: {result}\n")
-        if "accepting connections" in result:
-            info(f"✅ PostgreSQL aceitando conexões após {i+1}s\n")
+def wait_for_pg_tcp(container, timeout=60, hosts=("10.10.2.10", "10.0.0.10")):
+    info("🔍 Verificando inicialização do PostgreSQL nos hosts alvo...\n")
+    for i in range(1, timeout+1):
+        accepted = False
+        for h in hosts:
+            result = container.cmd(f"pg_isready -h {h} -p 5432 -U tb || echo NOK").strip()
+            info(f"[{i}s] {h} -> {result}\n")
+            if "accepting connections" in result:
+                accepted = True
+        if accepted:
+            info(f"✅ PostgreSQL aceitando conexões após {i}s\n")
             return True
         time.sleep(1)
-    info("❌ Timeout: PostgreSQL não aceitou conexões TCP.\n")
+    info("❌ Timeout: PostgreSQL não aceitou conexões TCP em nenhum host.\n")
     info(container.cmd("cat /var/log/postgresql/postgresql*.log || echo '[WARN] Sem log PostgreSQL.'\n"))
     return False
 
@@ -151,39 +155,150 @@ def run_topo(num_sims=5):
         privileged=True
     )
     # === Prepara .env do middts com os IPs reais das dependências ===
-    env_example_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../middleware-dt/.env.example'))
-    env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../middleware-dt/.env'))
+    md_base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../middleware-dt'))
+    env_example_path = os.path.join(md_base_dir, '.env.example')
+    env_path = os.path.join(md_base_dir, '.env')
     # IPs das dependências
-    POSTGRES_HOST = '10.10.2.10'  # IP do postgres na rede do middts
+    # Usar IP da interface compartilhada com middts (db-eth1)
+    POSTGRES_HOST = '10.10.2.10'
+    POSTGRES_PORT = '5432'
+    POSTGRES_USER = 'tb'
+    POSTGRES_PASSWORD = 'tb'
+    # Banco separado para o middleware (não reutilizar o DB do ThingsBoard)
+    POSTGRES_DB = 'middts'
     NEO4J_URL = 'bolt://10.10.2.30:7687'
     INFLUXDB_HOST = '10.10.2.20'
-    # Lê o env.example, substitui os hosts e grava o .env
-    with open(env_example_path) as f:
-        env_lines = f.readlines()
-    new_env = []
-    for line in env_lines:
-        if line.startswith('POSTGRES_HOST='):
-            new_env.append(f'POSTGRES_HOST={POSTGRES_HOST}\n')
-        elif line.startswith('NEO4J_URL='):
-            new_env.append(f'NEO4J_URL={NEO4J_URL}\n')
-        elif line.startswith('INFLUXDB_HOST='):
-            new_env.append(f'INFLUXDB_HOST={INFLUXDB_HOST}\n')
+    INFLUXDB_TOKEN = 'token'  # deve casar com DOCKER_INFLUXDB_INIT_ADMIN_TOKEN do container Influx
+    # Gera/atualiza .env de forma robusta
+    def render_env(lines):
+        new_env_local = []
+        seen = set()
+        for line in lines:
+            if line.startswith('POSTGRES_HOST='):
+                new_env_local.append(f'POSTGRES_HOST={POSTGRES_HOST}\n'); seen.add('POSTGRES_HOST')
+            elif line.startswith('POSTGRES_PORT='):
+                new_env_local.append(f'POSTGRES_PORT={POSTGRES_PORT}\n'); seen.add('POSTGRES_PORT')
+            elif line.startswith('POSTGRES_USER='):
+                new_env_local.append(f'POSTGRES_USER={POSTGRES_USER}\n'); seen.add('POSTGRES_USER')
+            elif line.startswith('POSTGRES_PASSWORD='):
+                new_env_local.append(f'POSTGRES_PASSWORD={POSTGRES_PASSWORD}\n'); seen.add('POSTGRES_PASSWORD')
+            elif line.startswith('POSTGRES_DB='):
+                new_env_local.append(f'POSTGRES_DB={POSTGRES_DB}\n'); seen.add('POSTGRES_DB')
+            elif line.startswith('NEO4J_URL='):
+                new_env_local.append(f'NEO4J_URL={NEO4J_URL}\n'); seen.add('NEO4J_URL')
+            elif line.startswith('INFLUXDB_HOST='):
+                new_env_local.append(f'INFLUXDB_HOST={INFLUXDB_HOST}\n'); seen.add('INFLUXDB_HOST')
+            elif line.startswith('INFLUXDB_TOKEN='):
+                new_env_local.append(f'INFLUXDB_TOKEN={INFLUXDB_TOKEN}\n'); seen.add('INFLUXDB_TOKEN')
+            else:
+                new_env_local.append(line)
+        # Garante que chaves existam
+        if 'POSTGRES_HOST' not in seen:
+            new_env_local.append(f'POSTGRES_HOST={POSTGRES_HOST}\n')
+        if 'POSTGRES_PORT' not in seen:
+            new_env_local.append(f'POSTGRES_PORT={POSTGRES_PORT}\n')
+        if 'POSTGRES_USER' not in seen:
+            new_env_local.append(f'POSTGRES_USER={POSTGRES_USER}\n')
+        if 'POSTGRES_PASSWORD' not in seen:
+            new_env_local.append(f'POSTGRES_PASSWORD={POSTGRES_PASSWORD}\n')
+        if 'POSTGRES_DB' not in seen:
+            new_env_local.append(f'POSTGRES_DB={POSTGRES_DB}\n')
+        if 'NEO4J_URL' not in seen:
+            new_env_local.append(f'NEO4J_URL={NEO4J_URL}\n')
+        if 'INFLUXDB_HOST' not in seen:
+            new_env_local.append(f'INFLUXDB_HOST={INFLUXDB_HOST}\n')
+        if 'INFLUXDB_TOKEN' not in seen:
+            new_env_local.append(f'INFLUXDB_TOKEN={INFLUXDB_TOKEN}\n')
+        # Atualiza/gera DATABASE_URL coerente
+        has_database_url = any(l.startswith('DATABASE_URL=') for l in new_env_local)
+        db_url = f'DATABASE_URL=postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}\n'
+        if has_database_url:
+            new_env_local = [db_url if l.startswith('DATABASE_URL=') else l for l in new_env_local]
         else:
-            new_env.append(line)
+            new_env_local.append(db_url)
+        return new_env_local
+
+    if os.path.exists(env_path):
+        with open(env_path) as f:
+            env_lines = f.readlines()
+        new_env = render_env(env_lines)
+    elif os.path.exists(env_example_path):
+        with open(env_example_path) as f:
+            env_lines = f.readlines()
+        new_env = render_env(env_lines)
+    else:
+        # Fallback mínimo
+        new_env = [
+            f'POSTGRES_HOST={POSTGRES_HOST}\n',
+            f'POSTGRES_PORT={POSTGRES_PORT}\n',
+            f'POSTGRES_USER={POSTGRES_USER}\n',
+            f'POSTGRES_PASSWORD={POSTGRES_PASSWORD}\n',
+            f'POSTGRES_DB={POSTGRES_DB}\n',
+            f'NEO4J_URL={NEO4J_URL}\n',
+            f'INFLUXDB_HOST={INFLUXDB_HOST}\n',
+            f'DATABASE_URL=postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}\n'
+        ]
     with open(env_path, 'w') as f:
         f.writelines(new_env)
+
+    # Helper: cria banco para o middts se ainda não existir (usa usuário 'tb')
+    def ensure_database(pg_container, dbname, owner='tb', connect_db='postgres'):
+        info(f"[pg] ensure_database: alvo='{dbname}' owner='{owner}' connect_db='{connect_db}'\n")
+        # Usa dollar-quoting para evitar problemas de escape
+        select_sql = f"SELECT 1 FROM pg_database WHERE datname=$${dbname}$$;"
+        check_cmd = (
+            f"bash -c \"PGPASSWORD=tb timeout 5s psql -U tb -d {connect_db} -tAc \"{select_sql}\" 2>/dev/null || echo FAIL\""
+        )
+        info(f"[pg][debug] check_cmd: {check_cmd}\n")
+        raw_check = pg_container.cmd(check_cmd)
+        info(f"[pg][debug] check_raw: {raw_check.strip()[:200]}\n")
+        tokens = [t.strip() for t in raw_check.strip().split() if t.strip().isdigit() or t.strip() == 'FAIL']
+        if '1' in tokens:
+            info(f"[pg] Database '{dbname}' já existe.\n")
+            return True
+        if 'FAIL' in tokens:
+            info("[pg][warn] Verificação retornou FAIL (timeout/erro); tentativa de criação continuará.\n")
+        create_sql = f"CREATE DATABASE {dbname} OWNER {owner};"
+        create_cmd = (
+            f"bash -c \"PGPASSWORD=tb timeout 10s psql -U tb -d {connect_db} -v ON_ERROR_STOP=1 -c '{create_sql}' 2>&1 || echo CREATE_FAIL\""
+        )
+        info(f"[pg][debug] create_cmd: {create_cmd}\n")
+        raw_create = pg_container.cmd(create_cmd)
+        info(f"[pg] CREATE raw (200c): {raw_create[:200]}\n")
+        # Se já existia, tratar como sucesso
+        if 'already exists' in raw_create:
+            info(f"[pg] Mensagem indica que database '{dbname}' já existia; prosseguindo.\n")
+            return True
+        time.sleep(1)
+        raw_check2 = pg_container.cmd(check_cmd)
+        info(f"[pg][debug] recheck_raw: {raw_check2.strip()[:200]}\n")
+        tokens2 = [t.strip() for t in raw_check2.strip().split() if t.strip().isdigit() or t.strip() == 'FAIL']
+        if '1' in tokens2:
+            info(f"[pg] Database '{dbname}' criado/verificado com sucesso.\n")
+            return True
+        # Fallback alternativo: listar bancos e procurar nome
+        list_cmd = "bash -c \"PGPASSWORD=tb timeout 5s psql -U tb -lqt 2>/dev/null | cut -d '|' -f1 | awk '{print $1}' | grep -Fx '" + dbname + "' && echo FOUND || echo NOTFOUND\""
+        list_out = pg_container.cmd(list_cmd).strip()
+        info(f"[pg][debug] list_out: {list_out}\n")
+        if 'FOUND' in list_out:
+            info(f"[pg] Database '{dbname}' detectado via listagem. Prosseguindo.\n")
+            return True
+        info(f"[pg][ERRO] Falha ao garantir database '{dbname}'. tokens2={tokens2}\n")
+        return False
 
     # Agora sim, sobe o middts já com o .env correto
     middts = safe_add('middts',
         dimage=os.getenv('MIDDTS_IMAGE', 'middts-custom:latest'),
-        # dcmd="/entrypoint.sh",
-        dcmd="/bin/bash",
+        dcmd="/entrypoint.sh",
+        # dcmd="/bin/bash",
         ports=[8000],
         port_bindings={8000: 8000},
         environment={
-            'DJANGO_SETTINGS_MODULE': 'middleware-dt.settings'
+            'DJANGO_SETTINGS_MODULE': 'middleware_dt.settings',
+            'INFLUXDB_TOKEN': INFLUXDB_TOKEN,
+            'DEFER_START': '1'
         },
-        volumes=[f'{os.path.abspath(os.path.join(os.path.dirname(__file__), '../../middleware-dt/.env'))}:/middleware-dt/.env'],
+        volumes=[f'{env_path}:/middleware-dt/.env'],
         privileged=True
     )
 
@@ -191,7 +306,18 @@ def run_topo(num_sims=5):
     simuladores = []
     for i in range(1, num_sims + 1):
         name = f'sim_{i:03d}'
-        sim = safe_add(name, dimage=os.getenv('SIM_IMAGE','iot_simulator:latest'), dcmd="/bin/bash", privileged=True)
+        sim = safe_add(
+            name,
+            dimage=os.getenv('SIM_IMAGE','iot_simulator:latest'),
+            dcmd="/bin/bash",
+            environment={
+                'INFLUXDB_TOKEN': INFLUXDB_TOKEN,
+                'INFLUXDB_HOST': INFLUXDB_HOST,
+                'INFLUXDB_ORG': 'org',
+                'INFLUXDB_BUCKET': 'bucket'
+            },
+            privileged=True
+        )
         if sim:
             simuladores.append(sim)
 
@@ -284,6 +410,9 @@ def run_topo(num_sims=5):
     pg.cmd("ip addr add 10.0.0.10/24 dev db-eth0 || true")
     pg.cmd("ip link set db-eth0 up")
     pg.cmd("ip route add 10.0.0.0/24 dev db-eth0 || true")
+    # Garante IP para rede middts no segundo interface (db-eth1) -> 10.10.2.10
+    pg.cmd("ip addr add 10.10.2.10/24 dev db-eth1 || true")
+    pg.cmd("ip link set db-eth1 up || true")
 
     tb.cmd("ip addr flush dev tb-eth0 scope global || true")
     tb.cmd("ip addr add 10.0.0.11/24 dev tb-eth0 || true")
@@ -294,6 +423,8 @@ def run_topo(num_sims=5):
     middts.cmd("ip addr add 10.0.0.12/24 dev middts-eth0 || true")
     middts.cmd("ip link set middts-eth0 up")
     middts.cmd("ip route add 10.0.0.0/24 dev middts-eth0 || true")
+    # Adiciona também endereço na subrede funcional middts (10.10.2.0/24) esperado pelo .env
+    middts.cmd("ip addr add 10.10.2.2/24 dev middts-eth0 || true")
 
     for idx, sim in enumerate(simuladores, 1):
         sim_if = f"sim_{idx:03d}-eth0"
@@ -322,6 +453,18 @@ def run_topo(num_sims=5):
         info("[ERRO] PostgreSQL não aceitou conexões TCP. Abortando.\n")
         net.stop()
         return
+
+    # Garante que o banco do middts exista antes de iniciar o middleware
+    if not ensure_database(pg, POSTGRES_DB):
+        info("[ERRO] Não foi possível criar/verificar o database do middts. Abortando.\n")
+        net.stop()
+        return
+
+    # Agora que o Postgres está acessível e o DB do middts existe, inicia o middleware
+    if middts:
+        info("[middts] Iniciando entrypoint do middleware agora que o Postgres respondeu e DB existe...\n")
+        middts.cmd('DEFER_START=0 /entrypoint.sh > /var/log/middts_start.log 2>&1 &')
+        info("[middts] EntryPoint lançado em background (log em /var/log/middts_start.log dentro do container).\n")
 
 
     # Inicialização simplificada do ThingsBoard

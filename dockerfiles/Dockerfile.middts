@@ -22,10 +22,12 @@ RUN pip install --no-cache-dir -r requirements/base.txt
 # Copia código da aplicação (apenas pasta específica)
 COPY middleware-dt/ .
 
-# Symlink para contornar nome de pacote com hífen, se necessário
-RUN ln -sf /middleware-dt /middleware_dt
+# Symlinks para contornar nome de pacote com hífen e pacote interno
+RUN ln -sf /middleware-dt /middleware_dt \
+ && ln -sf /middleware-dt/middleware-dt /middleware-dt/middleware_dt \
+ && /bin/sh -c "[ -f middleware-dt/settings.py ] || printf 'from .settings_base import *\n' > middleware-dt/settings.py"
 
-ENV DJANGO_SETTINGS_MODULE=middleware-dt.settings
+ENV DJANGO_SETTINGS_MODULE=middleware_dt.settings
 
 EXPOSE 8000
 
