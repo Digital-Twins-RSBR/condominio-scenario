@@ -40,7 +40,7 @@ clean-containers:
 	docker ps -a --filter "name=mn." -q | xargs -r docker rm -f
 
 reset-db:
-	@echo "Removendo volume do banco de dados ThingsBoard (db_data)..."
+	@echo "Removendo volume do banco de dados ThingsBoard, middts (db_data)..."
 	-docker volume rm db_data
 	@echo "Volume removido. O banco será recriado limpo no próximo start."
 
@@ -48,6 +48,37 @@ reset-tb:
 	@echo "Removendo volumes do ThingsBoard (db_data, tb_assets, tb_logs)..."
 	-docker volume rm db_data tb_assets tb_logs
 	@echo "Volumes removidos. O banco e dados do TB serão recriados limpos no próximo start."
+
+# === PRUNE VOLUMES POR SERVIÇO ===
+.PHONY: prune-vol-influx prune-vol-neo4j prune-vol-middts prune-vol-tb prune-vol-simulators prune-vol-all
+
+prune-vol-influx:
+	@echo "[🗑️] Removendo volumes relacionados ao InfluxDB (nomes contendo 'influx' ou 'influxdb')"
+	-@docker volume ls --format '{{.Name}}' | grep -E 'influx|influxdb' | xargs -r -n1 docker volume rm || true
+	@echo "Prune InfluxDB: concluído"
+
+prune-vol-neo4j:
+	@echo "[🗑️] Removendo volumes relacionados ao Neo4j (nomes contendo 'neo4j')"
+	-@docker volume ls --format '{{.Name}}' | grep -E 'neo4j' | xargs -r -n1 docker volume rm || true
+	@echo "Prune Neo4j: concluído"
+
+prune-vol-middts:
+	@echo "[🗑️] Removendo volumes relacionados ao MidDiTS (nomes contendo 'middts' ou 'middleware')"
+	-@docker volume ls --format '{{.Name}}' | grep -E 'middts|middleware' | xargs -r -n1 docker volume rm || true
+	@echo "Prune MidDiTS: concluído"
+
+prune-vol-tb:
+	@echo "[🗑️] Removendo volumes do ThingsBoard (db_data, tb_assets, tb_logs)"
+	-@docker volume rm db_data tb_assets tb_logs || true
+	@echo "Prune ThingsBoard: concluído"
+
+prune-vol-simulators:
+	@echo "[🗑️] Removendo volumes relacionados aos simuladores (nomes contendo 'sim_' ou 'simulator')"
+	-@docker volume ls --format '{{.Name}}' | grep -E 'sim_|simulator' | xargs -r -n1 docker volume rm || true
+	@echo "Prune Simulators: concluído"
+
+prune-vol-all: prune-vol-influx prune-vol-neo4j prune-vol-middts prune-vol-tb prune-vol-simulators
+	@echo "[🗑️] Pruning concluído para todos os serviços conhecidos"
 
 # === BUILD DE IMAGENS ===
 .PHONY: build-images
@@ -67,7 +98,14 @@ build-images:
 
 topo:
 	@echo "[📡] Executando topologia com Containernet"
-	bash -c 'source services/containernet/venv/bin/activate && sudo -E env PATH="$$PATH" python3 services/topology/topo_qos.py'
+	# By default run quiet; set VERBOSE=1 to enable verbose logs
+	@if [ -z "$$VERBOSE" ]; then \
+		echo "[INFO] Executando topologia (quiet). Use VERBOSE=1 make topo for detailed logs"; \
+		bash -c 'source services/containernet/venv/bin/activate && sudo -E env PATH="$$PATH" python3 services/topology/topo_qos.py --quiet'; \
+	else \
+		echo "[INFO] Executando topologia (verbose)"; \
+		bash -c 'source services/containernet/venv/bin/activate && sudo -E env PATH="$$PATH" python3 services/topology/topo_qos.py --verbose'; \
+	fi
 
 topo-screen:
 	@echo "[📡] Executando topologia com Containernet em screen"
@@ -79,7 +117,41 @@ draw:
 	bash -c 'python3 services/topology/draw_topology.py'
 
 # === VERIFICAÇÕES DE STATUS E REDE ===
-.PHONY: check-tb check-middts check-db check-influxdb check-neo4j check-parser check-simulator check-simulators check-network check-tb-internal
+.PHONY: check check-tb check-middts check-db check-influxdb check-neo4j check-parser check-simulator check-simulators check-network check-tb-internal
+
+check:
+	@echo "[🔎] Verificação rápida dos serviços (resumo em tabela)"
+	@printf "%-12s | %-15s | %-20s | %-7s | %-40s | %s\n" "serviço" "ip" "porta exposta" "rodando" "log inicializacao" "outras"
+	@printf "%.0s-" {1..120}; echo
+	@services="tb middts db influxdb neo4j parser"; \
+	for s in $$services; do \
+		c=mn.$$s; \
+		ip=$$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $$c 2>/dev/null || echo '-'); \
+		ports=$$(docker port $$c 2>/dev/null || echo '-'); \
+		running=$$(docker ps --filter "name=$$c" --filter "status=running" -q | wc -l | tr -d ' '); \
+		if [ "$$running" -gt 0 ]; then r="yes"; else r="no"; fi; \
+		case $$s in \
+			tb) log="deploy/logs/tb_start.log" ;; \
+			middts) log="deploy/logs/middts_start.log" ;; \
+			db) log="deploy/logs/db_start.log" ;; \
+			influxdb) log="deploy/logs/influx_start.log" ;; \
+			neo4j) log="deploy/logs/neo4j_start.log" ;; \
+			parser) log="deploy/logs/parser_start.log" ;; \
+		esac; \
+		printf "%-12s | %-15s | %-20s | %-7s | %-40s | %s\n" $$s $$ip "$$ports" $$r $$log ""; \
+	done
+	@# simuladores
+	@for i in 1 2 3 4 5; do \
+		name=`printf 'sim_%03d' $$i`; \
+		c=mn.$$name; \
+		ip=$$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $$c 2>/dev/null || echo '-'); \
+		ports=$$(docker port $$c 2>/dev/null || echo '-'); \
+		running=$$(docker ps --filter "name=$$c" --filter "status=running" -q | wc -l | tr -d ' '); \
+		if [ "$$running" -gt 0 ]; then r="yes"; else r="no"; fi; \
+		log="services/iot_simulator/logs/$$name_start.log"; \
+		printf "%-12s | %-15s | %-20s | %-7s | %-40s | %s\n" $$name $$ip "$$ports" $$r $$log ""; \
+	done
+	@echo "\nPara detalhes em tempo real use: tail -f deploy/logs/<servico>_start.log ou VERBOSE=1 make topo"
 
 # Serviços principais
 check-tb:
@@ -166,6 +238,49 @@ check-simulator:
 	@echo "[🔎] Testando comunicação com tb"
 	docker exec -it $(SIM) ping -c 2 10.10.1.2 || echo "[ERRO] $(SIM) não pinga tb"
 	docker exec -it $(SIM) bash -c 'nc -vz -w 2 10.10.1.2 8080' || echo "[ERRO] $(SIM) não conecta TCP 8080 em tb"
+
+# === HELPERS PARA EXECUTAR COMANDOS DENTRO DE CONTAINERS ===
+.PHONY: exec-middts exec-sim
+
+exec-middts:
+	@if [ -z "$(CMD)" ]; then echo "[USO] make exec-middts CMD='bash'"; exit 1; fi
+	@echo "[🔧] Executando em mn.middts: $(CMD)"
+	-docker exec -it mn.middts sh -c "$(CMD)"
+
+exec-sim:
+	@if [ -z "$(SIM)" ] || [ -z "$(CMD)" ]; then echo "[USO] make exec-sim SIM=mn.sim_001 CMD='bash'"; exit 1; fi
+	@echo "[🔧] Executando em $(SIM): $(CMD)"
+	-docker exec -it $(SIM) sh -c "$(CMD)"
+
+# === RESTORE ON-DEMAND (middts + simulators) ===
+.PHONY: restore-scenario restore-middts restore-simulators restore-sim
+
+# High-level: restore everything needed for the scenario (middts DB + all simulator sqlite files)
+restore-scenario: restore-middts restore-simulators
+
+# Restore middts DB: drop/create middts and import services/middleware-dt/middts.sql
+# Requires that the Postgres container be running as 'mn.db' and docker CLI available.
+restore-middts:
+	@echo "[RESTORE] Delegating middts restore to scripts/restore_middts.sh"; \
+	@chmod +x scripts/restore_middts.sh; scripts/restore_middts.sh
+
+# Restore all simulator sqlite files by copying the initial template into the host file mounted into each simulator.
+# This assumes simulators mount the host file services/iot_simulator/db.sqlite3 into /iot_simulator/db.sqlite3
+restore-simulators:
+	@echo "[RESTORE] Restoring simulator sqlite DBs (host file services/iot_simulator/db.sqlite3 will be replaced)"
+	@if [ ! -f services/iot_simulator/initial_data/db_scenario.sqlite3 ]; then echo "[ERRO] services/iot_simulator/initial_data/db_scenario.sqlite3 not found"; exit 1; fi
+	@cp services/iot_simulator/initial_data/db_scenario.sqlite3 services/iot_simulator/db.sqlite3 || (echo "[ERRO] copy failed"; exit 1); \
+	chmod 666 services/iot_simulator/db.sqlite3 || true; \
+	echo "[RESTORE] host simulator DB replaced. Restart simulators/entrypoints if necessary."
+
+# Restore single simulator (useful for per-sim debugging). Usage: make restore-sim SIM=mn.sim_001
+restore-sim:
+	@if [ -z "$(SIM)" ]; then echo "[USO] make restore-sim SIM=mn.sim_001"; exit 1; fi
+	@echo "[RESTORE] Restoring simulator $(SIM) sqlite DB from services/iot_simulator/initial_data/db_scenario.sqlite3"
+	@if [ ! -f services/iot_simulator/initial_data/db_scenario.sqlite3 ]; then echo "[ERRO] services/iot_simulator/initial_data/db_scenario.sqlite3 not found"; exit 1; fi
+	@cp services/iot_simulator/initial_data/db_scenario.sqlite3 services/iot_simulator/db.sqlite3 || (echo "[ERRO] copy failed"; exit 1); \
+	chmod 666 services/iot_simulator/db.sqlite3 || true; \
+	echo "[RESTORE] host simulator DB replaced. If $(SIM) is running, restart its entrypoint inside the container: make exec-sim SIM=$(SIM) CMD='kill 1 && /entrypoint.sh &'"
 
 # Teste de rede geral
 check-network:

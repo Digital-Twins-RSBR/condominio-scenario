@@ -18,6 +18,10 @@ RUN pip install --no-cache-dir -r requirements/base.txt
 # Copia código do simulador
 COPY iot_simulator/ .
 
+# Garantir que exista um settings.py que importe settings_base quando o projeto
+# for copiado. Criamos o arquivo somente se ele não existir no contexto copiado.
+RUN [ -f iot_simulator/settings.py ] || /bin/sh -c "printf 'from .settings_base import *\n' > iot_simulator/settings.py"
+
 ENV DJANGO_SETTINGS_MODULE=iot_simulator.settings
 
 COPY iot_simulator/entrypoint.sh /entrypoint.sh
