@@ -27,6 +27,10 @@ RUN mkdir -p /var/log/thingsboard \
     && chown -R 1000:1000 /var/log/thingsboard \
     && chmod 777 /var/log/thingsboard
 
+
+# Desabilita serviço de e-mail do ThingsBoard
+ENV MAIL_ENABLED=false
+
 # Executa como root para evitar problemas com install.sh
 USER root
 

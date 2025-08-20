@@ -515,11 +515,6 @@ def run_topo(num_sims=5):
 
     for i in range(1, num_sims + 1):
         name = f'sim_{i:03d}'
-        # base volumes for any simulator: do NOT mount host sqlite file.
-        # We will copy a scenario template into the container after creation
-        # to avoid mounting a host path (which can be a directory) onto a
-        # file path inside the container.
-        # Mount simulator log from the central deploy/logs directory (host_logs)
         vols = [
             f"{host_logs.get(f'sim_{i:03d}')}:/iot_simulator/sim_{i:03d}_start.log",
         ]
@@ -527,12 +522,19 @@ def run_topo(num_sims=5):
             'INFLUXDB_TOKEN': INFLUXDB_TOKEN,
             'INFLUXDB_HOST': INFLUXDB_HOST,
             'INFLUXDB_ORG': 'org',
-            'INFLUXDB_BUCKET': 'bucket'
+            'INFLUXDB_BUCKET': 'bucket',
+            'SIMULATOR_NUMBER': str(i)
         }
-        # For sim_001, mount custom entrypoint and expose port 8001 on the host
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        reset_marker = os.path.join(project_root, 'deploy', '.reset_sim_db')
+        try:
+            if os.path.exists(reset_marker):
+                env['RESET_SIM_DB'] = '1'
+                info(f"[sim][INFO] Found reset marker {reset_marker} -> simulator will force restore on startup\n")
+        except Exception:
+            pass
         if i == 1 and os.path.exists(host_sim_entry):
             vols.insert(0, f"{host_sim_entry}:/entrypoint.sh")
-            # Ensure sim_001 accepts all hosts (for testing UI access)
             env['ALLOWED_HOSTS'] = '*'
             sim = safe_add_with_status(
                 name,
@@ -555,10 +557,6 @@ def run_topo(num_sims=5):
             )
         if sim:
             simuladores.append(sim)
-            # Do not copy host sqlite into container; the simulator image now
-            # contains a `restore_db` helper that will initialize/populate the
-            # internal sqlite from the project's initial_data. We'll call that
-            # helper right before launching the entrypoint (see below).
             info(f"[sim] {sim.name} criado — restore_db será executado antes do entrypoint, se disponível.\n")
 
     # Ligações: cada host ao seu switch

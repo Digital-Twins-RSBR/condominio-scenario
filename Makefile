@@ -43,6 +43,11 @@ reset-db:
 	@echo "Removendo volume do banco de dados ThingsBoard, middts (db_data)..."
 	-docker volume rm db_data
 	@echo "Volume removido. O banco será recriado limpo no próximo start."
+	@echo "Removendo DBs locais dos simuladores para forcar restore (logs NÃO precisam ser apagados)"
+	-@find services/iot_simulator -maxdepth 1 -type f -name 'db.sqlite3' -exec rm -f {} \; || true
+	@mkdir -p deploy || true
+	@touch deploy/.reset_sim_db
+	@echo "Simulators: DB local removido. deploy/.reset_sim_db marker criado; next topo run will force restore inside containers."
 
 reset-tb:
 	@echo "Removendo volumes do ThingsBoard (db_data, tb_assets, tb_logs)..."
@@ -81,7 +86,7 @@ prune-vol-all: prune-vol-influx prune-vol-neo4j prune-vol-middts prune-vol-tb pr
 	@echo "[🗑️] Pruning concluído para todos os serviços conhecidos"
 
 # === BUILD DE IMAGENS ===
-.PHONY: build-images
+.PHONY: build-images rebuild-images
 
 build-images:
 	@echo "[🐳] Construindo imagens Docker personalizadas"
@@ -93,6 +98,61 @@ build-images:
 	docker build -t $(PARSER_IMAGE) -f $(DOCKER_PATH)/Dockerfile.parser services/
 	docker build -t $(INFLUX_IMAGE) -f $(DOCKER_PATH)/Dockerfile.influx services/
 	
+
+rebuild-images:
+	@echo "[🐳] Rebuilding ALL images from scratch (pulling base images, no cache)"
+	# Use --pull to get latest base layers and --no-cache to force full rebuild
+	docker build --pull --no-cache -t $(MIDDTS_CUSTOM_IMAGE) -f $(DOCKER_PATH)/Dockerfile.middts services/
+	docker build --pull --no-cache -t $(IOT_SIM_IMAGE) -f $(DOCKER_PATH)/Dockerfile.iot_simulator services/
+	docker build --pull --no-cache -t $(TB_IMAGE) -f $(DOCKER_PATH)/Dockerfile.tb services/
+	docker build --pull --no-cache -t $(PG_IMAGE) -f $(DOCKER_PATH)/Dockerfile.pg13 services/
+	docker build --pull --no-cache -t $(NEO4J_IMAGE) -f $(DOCKER_PATH)/Dockerfile.neo4j services/
+	docker build --pull --no-cache -t $(PARSER_IMAGE) -f $(DOCKER_PATH)/Dockerfile.parser services/
+	docker build --pull --no-cache -t $(INFLUX_IMAGE) -f $(DOCKER_PATH)/Dockerfile.influx services/
+	@echo "[🐳] Rebuild completo finalizado. Certifique-se de recriar os containers para usar as novas imagens."
+
+# === USABILITY ALIASES E WORKFLOWS ===
+# Comandos mais intuitivos para o dia-a-dia: imagens, containers e um fluxo dev rápido
+.PHONY: help images-build images-rebuild containers-recreate dev ps logs-sim
+
+help:
+	@echo "Uso: make <target>"
+	@echo "Grupos principais:"
+	@echo "  images-build        -> Reconstruir imagens (igual a make build-images)"
+	@echo "  images-rebuild      -> Rebuild completo (igual a make rebuild-images)"
+	@echo "  containers-recreate -> Remove um container mn.<SERVICE> (use SERVICE=tb)"
+	@echo "  dev                 -> Fluxo rápido (remove containers, build images, executa topo)"
+	@echo "  topo                -> Inicia a topologia (containernet)"
+	@echo "  clean               -> Limpeza completa (rede/veth/containers)"
+	@echo "  check               -> Health checks dos containers (use make check)"
+	@echo "Exemplos: make images-build; make containers-recreate SERVICE=tb; make dev"
+
+# Aliases que delegam para os targets já existentes para manter compatibilidade
+images-build:
+	@$(MAKE) build-images
+
+images-rebuild:
+	@$(MAKE) rebuild-images
+
+containers-recreate:
+	@if [ -z "$(SERVICE)" ]; then echo "[USO] make containers-recreate SERVICE=tb"; exit 1; fi
+	@$(MAKE) recreate-container SERVICE=$(SERVICE)
+
+# Fluxo diário usado por você: remove apenas containers, rebuild de imagens e sobe a topologia
+dev:
+	@echo "[DEV] Fluxo: clean-containers -> build-images -> topo"
+	@$(MAKE) clean-containers
+	@$(MAKE) build-images
+	@$(MAKE) topo
+
+# Conveniência: listar containers filtrados pelo prefixo mn.
+ps:
+	@docker ps --filter "name=mn." --format 'table {{.Names}}	{{.Status}}	{{.Image}}'
+
+# Tail rápido dos logs de um simulador: make logs-sim SIM=sim_001
+logs-sim:
+	@if [ -z "$(SIM)" ]; then echo "[USO] make logs-sim SIM=sim_001"; exit 1; fi
+	@tail -n 200 -f services/iot_simulator/logs/mn.$(SIM)_start.log || tail -n 200 -f deploy/logs/$(SIM)_start.log || true
 # === TOPOLOGIA E VISUALIZAÇÃO ===
 .PHONY: topo topo-screen draw
 
@@ -251,6 +311,15 @@ exec-sim:
 	@if [ -z "$(SIM)" ] || [ -z "$(CMD)" ]; then echo "[USO] make exec-sim SIM=mn.sim_001 CMD='bash'"; exit 1; fi
 	@echo "[🔧] Executando em $(SIM): $(CMD)"
 	-docker exec -it $(SIM) sh -c "$(CMD)"
+
+# Recreate a single container by removing it; does not attempt to recreate automatically.
+# Usage: make recreate-container SERVICE=tb
+.PHONY: recreate-container
+recreate-container:
+	@if [ -z "$(SERVICE)" ]; then echo "[USO] make recreate-container SERVICE=tb (removerá mn.<service>)"; exit 1; fi
+	@echo "[🔁] Recriando container mn.$(SERVICE) -> removendo container atual (se existir)"
+	-docker rm -f mn.$(SERVICE) || true
+	@echo "[🔁] mn.$(SERVICE) removido. Para recriar o serviço, execute o comando de topologia (ex: make topo) ou o pipeline de deploy apropriado."
 
 # === RESTORE ON-DEMAND (middts + simulators) ===
 .PHONY: restore-scenario restore-middts restore-simulators restore-sim
