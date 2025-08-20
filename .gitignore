@@ -6,6 +6,8 @@ __pycache__/
 dist/
 build/
 .eggs/
+test_output/
+exemplo_3sims/
 
 # Django
 *.sqlite3
