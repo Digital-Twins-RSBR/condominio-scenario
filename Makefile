@@ -151,20 +151,25 @@ ps:
 
 # Tail rápido dos logs de um simulador: make logs-sim SIM=sim_001
 logs-sim:
-	@if [ -z "$(SIM)" ]; then echo "[USO] make logs-sim SIM=sim_001"; exit 1; fi
 	@tail -n 200 -f services/iot_simulator/logs/mn.$(SIM)_start.log || tail -n 200 -f deploy/logs/$(SIM)_start.log || true
 # === TOPOLOGIA E VISUALIZAÇÃO ===
 .PHONY: topo topo-screen draw
 
 topo:
 	@echo "[📡] Executando topologia com Containernet"
-	# By default run quiet; set VERBOSE=1 to enable verbose logs
-	@if [ -z "$$VERBOSE" ]; then \
+	# Load SIMULATOR_COUNT from .env (repo root) or services/middleware-dt/.env if present.
+	# Fallback to 1 when not defined. Use VERBOSE=1 to enable verbose logs.
+	@SIM_ENV="$$(pwd)/.env"; \
+	if [ ! -f "$$SIM_ENV" ]; then SIM_ENV="$$(pwd)/services/middleware-dt/.env"; fi; \
+	if [ -f "$$SIM_ENV" ]; then . "$$SIM_ENV"; fi; \
+	SIMS="$${SIMULATOR_COUNT:-1}"; \
+	echo "[📡] Running topology with SIMULATOR_COUNT=$$SIMS (from $$SIM_ENV if present)"; \
+	if [ -z "$$VERBOSE" ]; then \
 		echo "[INFO] Executando topologia (quiet). Use VERBOSE=1 make topo for detailed logs"; \
-		bash -c 'source services/containernet/venv/bin/activate && sudo -E env PATH="$$PATH" python3 services/topology/topo_qos.py --quiet'; \
+		. services/containernet/venv/bin/activate && sudo -E env PATH="$$PATH" python3 services/topology/topo_qos.py --sims $$SIMS --quiet; \
 	else \
 		echo "[INFO] Executando topologia (verbose)"; \
-		bash -c 'source services/containernet/venv/bin/activate && sudo -E env PATH="$$PATH" python3 services/topology/topo_qos.py --verbose'; \
+		. services/containernet/venv/bin/activate && sudo -E env PATH="$$PATH" python3 services/topology/topo_qos.py --sims $$SIMS --verbose; \
 	fi
 
 topo-screen:

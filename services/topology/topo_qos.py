@@ -63,6 +63,28 @@ def tb_has_any_table(pg_container, retries=6, delay=2, min_tables=5, pg_user='po
         time.sleep(delay)
     return False
 
+def wait_for_thingsboard(host='10.0.0.11', port=8080, timeout=180, interval=3):
+    """Wait until ThingsBoard HTTP endpoint responds (not necessarily 200).
+    We consider TB ready when the HTTP endpoint returns any non-zero status code
+    (curl returns '000' when it couldn't connect at all)."""
+    url = f"http://{host}:{port}/api/auth/login"
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            # use curl to avoid adding new runtime deps; capture the status code
+            cmd = f"curl -s -o /dev/null -w '%{{http_code}}' --max-time 3 {url}"
+            proc = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            code = proc.stdout.decode().strip()
+            if code and code != '000':
+                info(f"[tb][wait] ThingsBoard HTTP responded with {code} at {url}\n")
+                return True
+        except Exception:
+            pass
+        info(f"[tb][wait] Ainda sem resposta do ThingsBoard em {url} (aguarda {interval}s)...\n")
+        time.sleep(interval)
+    info(f"[tb][wait] Timeout aguardando ThingsBoard em {url}\n")
+    return False
+
 def run_topo(num_sims=5):
     setLogLevel('info')
     # When running, honor QUIET/VERBOSE globals set at module import
@@ -698,8 +720,12 @@ def run_topo(num_sims=5):
             except Exception:
                 # ignore restore failures
                 pass
-            # roda em background dentro do container
-            sim.cmd(f"/entrypoint.sh > {logf} 2>&1 &")
+            # Prepare log file and run optional restore helper. Entrypoint will be launched
+            # later after ThingsBoard is up to avoid create/search races on startup.
+            try:
+                sim.cmd(f"mkdir -p /iot_simulator || true && touch {logf} && chmod 666 {logf} || true")
+            except Exception:
+                pass
         except Exception as e:
             info(f"[sim][WARN] falha ao iniciar entrypoint em {sim.name}: {e}\n")
 
@@ -781,15 +807,38 @@ def run_topo(num_sims=5):
 
     info("*** Aguarde ThingsBoard inicializar (+-30s)\n")
 
+    # Wait for ThingsBoard HTTP to start answering before launching simulators' entrypoints
+    tb_ready = wait_for_thingsboard(host='10.0.0.11', port=8080, timeout=180, interval=3)
+    if not tb_ready:
+        info("[tb] ThingsBoard não respondeu no tempo esperado; simuladores serão iniciados mesmo assim (risco de conflitos).\n")
+
+    # Launch simulator entrypoints now that TB is responding (or timeout reached)
+    info("[sim] Lançando entrypoints dos simuladores agora que ThingsBoard parece pronto...\n")
+    for idx, sim in enumerate(simuladores, 1):
+        try:
+            logf = f"/iot_simulator/sim_{idx:03d}_start.log"
+            sim.cmd(f"/entrypoint.sh > {logf} 2>&1 &")
+        except Exception as e:
+            info(f"[sim][WARN] falha ao iniciar entrypoint em {sim.name}: {e}\n")
+
     CLI(net)
     net.stop()
+    # Attempt to remove the reset marker so subsequent topo runs don't force simulator DB restore.
+    try:
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        reset_marker = os.path.join(repo_root, 'deploy', '.reset_sim_db')
+        if os.path.exists(reset_marker):
+            os.remove(reset_marker)
+            info(f"[topo] Removed reset marker {reset_marker} so simulators won't be auto-restored on next run.\n")
+    except Exception:
+        pass
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Containernet topology runner for condominio-scenario')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--quiet', action='store_true', help='Run with minimal, concise output (default)')
     group.add_argument('--verbose', action='store_true', help='Run with verbose debug output')
-    parser.add_argument('--sims', type=int, default=5, help='Number of simulator nodes to create')
+    parser.add_argument('--sims', type=int, default=1, help='Number of simulator nodes to create')
     args = parser.parse_args()
     # Configure module-level flags
     QUIET = args.quiet or not args.verbose
