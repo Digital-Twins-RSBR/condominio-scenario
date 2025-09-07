@@ -10,6 +10,7 @@ from mininet.node import Controller
 from mininet.link import TCLink
 from mininet.cli import CLI
 from mininet.log import setLogLevel, info
+import json
 
 # CLI-controlled verbosity flags (module defaults)
 QUIET = True
@@ -19,7 +20,8 @@ VERBOSE = False
 def cleanup_containers():
     info("[🧹] Removendo containers e volumes antigos tb/db\n")
     subprocess.run("docker rm -f mn.tb mn.db", shell=True)
-    subprocess.run("docker volume rm tb_assets tb_logs", shell=True)
+    # remove known named volumes (best-effort)
+    subprocess.run("docker volume rm tb_assets tb_logs influx_logs neo4j_logs parser_logs || true", shell=True)
 
 
 def wait_for_pg_tcp(container, timeout=60, hosts=("10.10.2.10", "10.0.0.10"), pg_user='postgres'):
@@ -109,13 +111,21 @@ def run_topo(num_sims=5):
     if QUIET:
         print("[CLEANUP] removed old containers/volumes (best-effort)")
     # Garante que o volume tb_logs existe e está limpo, com permissões corretas
-    info("[tb_logs] Garantindo volume tb_logs limpo e permissões corretas\n")
-    subprocess.run("docker volume inspect tb_logs >/dev/null 2>&1 || docker volume create tb_logs", shell=True)
-    # Monta o volume temporariamente em um container para limpar e ajustar permissões
-    subprocess.run(
-        "docker run --rm -v tb_logs:/mnt tb-node-custom bash -c 'rm -rf /mnt/* && chown -R 1000:1000 /mnt && chmod -R 777 /mnt'",
-        shell=True
-    )
+    info("[logs] Garantindo volumes de logs limpos e permissões corretas\n")
+    # volumes list mirrors the named volumes we will mount into containers
+    log_volumes = ['tb_logs', 'influx_logs', 'neo4j_logs', 'parser_logs']
+    for v in log_volumes:
+        try:
+            subprocess.run(f"docker volume inspect {v} >/dev/null 2>&1 || docker volume create {v}", shell=True, check=False)
+            # Clean and set permissões via a helper run
+            subprocess.run(
+                f"docker run --rm -v {v}:/mnt tb-node-custom bash -c 'rm -rf /mnt/* && chown -R 1000:1000 /mnt && chmod -R 777 /mnt'",
+                shell=True,
+                check=False
+            )
+        except Exception:
+            # best-effort
+            pass
     net = Containernet(controller=Controller)
     net.addController('c0')
 
@@ -163,6 +173,47 @@ def run_topo(num_sims=5):
         except Exception as e:
             info(f"[logs][WARN] falha ao criar/ajustar log host {path}: {e}\n")
     
+    # Load Influx config from repo .env early so container creation can use it
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    repo_env = os.path.join(repo_root, '.env')
+    INFLUXDB_TOKEN = 'token'
+    INFLUXDB_ORG = INFLUXDB_ORG if 'INFLUXDB_ORG' in globals() else 'org'
+    INFLUXDB_BUCKET = INFLUXDB_BUCKET if 'INFLUXDB_BUCKET' in globals() else 'iot_data'
+    try:
+        if os.path.exists(repo_env):
+            with open(repo_env, 'r') as ef:
+                for line in ef:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    if line.startswith('INFLUXDB_TOKEN='):
+                        INFLUXDB_TOKEN = line.split('=', 1)[1]
+                    if line.startswith('INFLUXDB_ORG=') or line.startswith('INFLUXDB_ORGANIZATION='):
+                        INFLUXDB_ORG = line.split('=', 1)[1]
+                    if line.startswith('INFLUXDB_BUCKET='):
+                        INFLUXDB_BUCKET = line.split('=', 1)[1]
+    except Exception:
+        pass
+
+    # Optional: read bootstrap password for Influx from repo .env or fallback to a safe default
+    INFLUXDB_INIT_PASSWORD = 'middts_passw'
+    try:
+        if os.path.exists(repo_env):
+            with open(repo_env, 'r') as ef:
+                for line in ef:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    # support both variable names used across the project
+                    if line.startswith('DOCKER_INFLUXDB_INIT_PASSWORD=') or line.startswith('INFLUXDB_INIT_PASSWORD='):
+                        INFLUXDB_INIT_PASSWORD = line.split('=', 1)[1]
+                        break
+    except Exception:
+        pass
+    # Ensure minimum length expected by InfluxDB (8 characters)
+    if len(INFLUXDB_INIT_PASSWORD) < 8:
+        INFLUXDB_INIT_PASSWORD = INFLUXDB_INIT_PASSWORD.ljust(8, '_')
+
     POSTGRES_HOST = '10.10.2.10'
     POSTGRES_PORT = '5432'
     POSTGRES_USER = 'postgres'
@@ -185,31 +236,47 @@ def run_topo(num_sims=5):
         privileged=True
     )
     influxdb = safe_add_with_status('influxdb',
-        dimage='influxdb-tools:latest',
+        dimage=os.getenv('INFLUXDB_IMAGE','influxdb:2.7'),
         # use the daemon executable expected by official images
         dcmd='influxd',
+    ip='10.10.2.20/24',
         ports=[8086],
         port_bindings={8086: 8086},
         environment={
             'DOCKER_INFLUXDB_INIT_MODE': 'setup',
-            'DOCKER_INFLUXDB_INIT_USERNAME': 'admin',
-            'DOCKER_INFLUXDB_INIT_PASSWORD': 'admin123',
-            'DOCKER_INFLUXDB_INIT_ORG': 'org',
-            'DOCKER_INFLUXDB_INIT_BUCKET': 'bucket',
-            'DOCKER_INFLUXDB_INIT_ADMIN_TOKEN': 'token'
+            'DOCKER_INFLUXDB_INIT_USERNAME': 'middts',
+            'DOCKER_INFLUXDB_INIT_PASSWORD': INFLUXDB_INIT_PASSWORD,
+            'DOCKER_INFLUXDB_INIT_ORG': INFLUXDB_ORG,
+            'DOCKER_INFLUXDB_INIT_BUCKET': INFLUXDB_BUCKET,
+            'DOCKER_INFLUXDB_INIT_ADMIN_TOKEN': INFLUXDB_TOKEN
         },
-        volumes=[f"{host_logs.get('influxdb')}:/var/log/influxdb_start.log"],
+        volumes=[
+            'influx_logs:/var/log/influxdb',
+            f"{host_logs.get('influxdb')}:/var/log/influxdb_start.log",
+        ],
         privileged=True
     )
     neo4j = safe_add_with_status('neo4j',
         dimage='neo4j-tools:latest',
-        # dcmd="/bin/bash",
-        ports=[7474, 7687],
-        port_bindings={7474: 7474, 7687: 7687},
+        # Start Neo4j in foreground (console) so logs are streamable and
+        # the process binds correctly to the container network. Also ensure
+        # the server listens on 0.0.0.0 to be reachable from other containers.
+    dcmd="/bin/bash -lc 'echo \"server.default_listen_address=0.0.0.0\" >> /var/lib/neo4j/conf/neo4j.conf || true && /var/lib/neo4j/bin/neo4j console'",
+    ip='10.10.2.30/24',
+    ports=[7474, 7687],
+    port_bindings={7474: 7474, 7687: 7687},
+        # Prefer middleware .env value for NEO4J_AUTH when available, otherwise use a safe default
         environment={
-            'NEO4J_AUTH': 'neo4j/test123'
+            'NEO4J_AUTH': os.environ.get('NEO4J_AUTH', 'neo4j/neo4j_pass'),
+            # Hint to the official image to bind to all interfaces. This
+            # mirrors the explicit config line we append above and helps
+            # newer images recognize the intent via env vars.
+            'NEO4J_dbms_default__listen__address': '0.0.0.0'
         },
-        volumes=[f"{host_logs.get('neo4j')}:/var/log/neo4j_start.log"],
+        volumes=[
+            'neo4j_logs:/var/log/neo4j',
+            f"{host_logs.get('neo4j')}:/var/log/neo4j_start.log",
+        ],
         privileged=True
     )
     parser = safe_add_with_status('parser',
@@ -217,9 +284,42 @@ def run_topo(num_sims=5):
         dcmd="/bin/bash",
         ports=[8080, 8081],
         port_bindings={8080: 8082, 8081: 8083},
-        volumes=[f"{host_logs.get('parser')}:/var/log/parser_start.log"],
+        volumes=[
+            'parser_logs:/var/log/parser',
+            f"{host_logs.get('parser')}:/var/log/parser_start.log",
+        ],
         privileged=True
     )
+    # Start background followers that pipe container stdout/stderr (docker logs -f)
+    # into the host-side files under deploy/logs/*. This ensures the
+    # service startup logs are preserved even if the container writes to
+    # stdout/stderr instead of the mapped file paths.
+    LOG_FOLLOW_PROCS = []
+    def follow_container_logs(name, host_path):
+        """Follow docker logs for container 'mn.<name>' and append them to host_path."""
+        try:
+            if not host_path:
+                return
+            os.makedirs(os.path.dirname(host_path), exist_ok=True)
+            # open in append-binary so we capture raw output and allow concurrent writes
+            f = open(host_path, 'ab')
+            docker_name = f"mn.{name}"
+            # Use docker logs -f to follow; keep process attached to this python runtime
+            p = subprocess.Popen(['docker', 'logs', '-f', docker_name], stdout=f, stderr=subprocess.STDOUT)
+            LOG_FOLLOW_PROCS.append((p, f))
+            if QUIET:
+                print(f"[LOG] following logs for {docker_name} -> {host_path}")
+        except Exception as e:
+            info(f"[logs][WARN] falha ao seguir logs de {name}: {e}\n")
+
+    # Start followers for the three services of interest if their host paths exist
+    try:
+        follow_container_logs('influxdb', host_logs.get('influxdb'))
+        follow_container_logs('neo4j', host_logs.get('neo4j'))
+        follow_container_logs('parser', host_logs.get('parser'))
+    except Exception:
+        # Non-fatal: best-effort
+        pass
     # ...existing code...
 
     # Switches para cada domínio (usar nomes numéricos: s1, s2, ...)
@@ -270,7 +370,40 @@ def run_topo(num_sims=5):
     POSTGRES_DB = 'middts'
     NEO4J_URL = 'bolt://10.10.2.30:7687'
     INFLUXDB_HOST = '10.10.2.20'
-    INFLUXDB_TOKEN = 'token'  # deve casar com DOCKER_INFLUXDB_INIT_ADMIN_TOKEN do container Influx
+    # Load INFLUXDB_TOKEN from repository .env if present so created containers
+    # (middts and simulators) receive the same token the operator configured.
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    repo_env = os.path.join(repo_root, '.env')
+    INFLUXDB_TOKEN = 'token'  # fallback default
+    try:
+        if os.path.exists(repo_env):
+            with open(repo_env, 'r') as ef:
+                for line in ef:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    if line.startswith('INFLUXDB_TOKEN='):
+                        INFLUXDB_TOKEN = line.split('=', 1)[1]
+                        break
+    except Exception:
+        # best-effort: if reading fails, keep the default token
+        pass
+    # Also read org and bucket from repo .env if present
+    INFLUXDB_ORG = 'org'
+    INFLUXDB_BUCKET = 'bucket'
+    try:
+        if os.path.exists(repo_env):
+            with open(repo_env, 'r') as ef:
+                for line in ef:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    if line.startswith('INFLUXDB_ORG=') or line.startswith('INFLUXDB_ORGANIZATION='):
+                        INFLUXDB_ORG = line.split('=', 1)[1]
+                    if line.startswith('INFLUXDB_BUCKET='):
+                        INFLUXDB_BUCKET = line.split('=', 1)[1]
+    except Exception:
+        pass
     # Gera/atualiza .env de forma robusta
     def render_env(lines):
         new_env_local = []
@@ -342,6 +475,23 @@ def run_topo(num_sims=5):
         ]
     with open(env_path, 'w') as f:
         f.writelines(new_env)
+
+    # Discover NEO4J_AUTH from the middleware .env if present so we can
+    # create the neo4j container using the same credential.
+    NEO4J_AUTH = 'neo4j/neo4j_pass'
+    try:
+        md_env = os.path.join(md_base_dir, '.env')
+        if os.path.exists(md_env):
+            with open(md_env, 'r') as nef:
+                for l in nef:
+                    s = l.strip()
+                    if not s or s.startswith('#'):
+                        continue
+                    if s.startswith('NEO4J_AUTH='):
+                        NEO4J_AUTH = s.split('=', 1)[1]
+                        break
+    except Exception:
+        pass
 
     # Diretório central de logs (visível no host) para todos os hosts da topologia
     deploy_logs_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../deploy/logs'))
@@ -540,11 +690,16 @@ def run_topo(num_sims=5):
         vols = [
             f"{host_logs.get(f'sim_{i:03d}')}:/iot_simulator/sim_{i:03d}_start.log",
         ]
+        # If a host-level .env for the simulator exists, mount it so containers
+        # receive the same INFLUXDB_TOKEN/INFLUXDB_BUCKET values used by the repo.
+        host_sim_env = os.path.join(sim_project_root, '.env')
+        if os.path.exists(host_sim_env):
+            vols.insert(0, f"{host_sim_env}:/iot_simulator/.env")
         env = {
             'INFLUXDB_TOKEN': INFLUXDB_TOKEN,
             'INFLUXDB_HOST': INFLUXDB_HOST,
-            'INFLUXDB_ORG': 'org',
-            'INFLUXDB_BUCKET': 'bucket',
+            'INFLUXDB_ORG': INFLUXDB_ORG,
+            'INFLUXDB_BUCKET': INFLUXDB_BUCKET,
             'SIMULATOR_NUMBER': str(i)
         }
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -669,8 +824,196 @@ def run_topo(num_sims=5):
 
     # Agora sim, inicia a rede
     net.start()
+
+    # After network start, discover container IPs and inject into .env files
+    try:
+        # helper to resolve Mininet/Containernet container objects to docker names/IPs
+        def container_ip(container_obj):
+            try:
+                name = container_obj.name
+                # docker inspect
+                import subprocess, json
+                out = subprocess.check_output(['docker', 'inspect', name])
+                data = json.loads(out)
+                # get first network IP
+                ip = None
+                if data and isinstance(data, list):
+                    nets = data[0].get('NetworkSettings', {}).get('Networks', {})
+                    for v in nets.values():
+                        ip = v.get('IPAddress')
+                        if ip:
+                            break
+                return ip
+            except Exception:
+                return None
+
+        influx_ip = container_ip(influxdb) or os.getenv('INFLUXDB_HOST', '10.10.2.20')
+        neo4j_ip = container_ip(neo4j) or os.getenv('NEO4J_HOST', '10.10.2.30')
+    except Exception:
+        influx_ip = os.getenv('INFLUXDB_HOST', '10.10.2.20')
+        neo4j_ip = os.getenv('NEO4J_HOST', '10.10.2.30')
+
+    # Write these IPs into middleware and simulator .env files (idempotent)
+    try:
+        md_env_path = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')), 'services', 'middleware-dt', '.env')
+        sim_env_path = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')), 'services', 'iot_simulator', '.env')
+
+        def upsert_env(path, key, value):
+            lines = []
+            if os.path.exists(path):
+                with open(path, 'r') as f:
+                    lines = f.read().splitlines()
+            found = False
+            for i, ln in enumerate(lines):
+                if ln.startswith(key + '='):
+                    lines[i] = f'{key}={value}'
+                    found = True
+                    break
+            if not found:
+                lines.append(f'{key}={value}')
+            with open(path, 'w') as f:
+                f.write('\n'.join(lines) + '\n')
+
+        # Middleware .env updates
+        try:
+            upsert_env(md_env_path, 'INFLUXDB_HOST', influx_ip)
+            upsert_env(md_env_path, 'INFLUXDB_PORT', str(INFLUXDB_PORT if 'INFLUXDB_PORT' in globals() else 8086))
+            upsert_env(md_env_path, 'INFLUXDB_BUCKET', INFLUXDB_BUCKET)
+            upsert_env(md_env_path, 'INFLUXDB_ORGANIZATION', INFLUXDB_ORG)
+            upsert_env(md_env_path, 'INFLUXDB_TOKEN', INFLUXDB_TOKEN)
+            upsert_env(md_env_path, 'NEO4J_URL', f'bolt://{neo4j_ip}:7687')
+            # keep NEO4J_AUTH untouched
+        except Exception:
+            pass
+
+        # Simulator .env updates
+        try:
+            upsert_env(sim_env_path, 'INFLUXDB_HOST', influx_ip)
+            upsert_env(sim_env_path, 'INFLUXDB_PORT', str(INFLUXDB_PORT if 'INFLUXDB_PORT' in globals() else 8086))
+            upsert_env(sim_env_path, 'INFLUXDB_BUCKET', INFLUXDB_BUCKET)
+            upsert_env(sim_env_path, 'INFLUXDB_ORGANIZATION', INFLUXDB_ORG)
+            upsert_env(sim_env_path, 'INFLUXDB_TOKEN', INFLUXDB_TOKEN)
+        except Exception:
+            pass
+    except Exception:
+        info('[env][WARN] failed to inject container IPs into .env files\n')
     if QUIET:
         print(f"[NET] network started; hosts: {len(simuladores)+6} (including core services)")
+
+    # Ensure Influx bucket exists and token is valid. This runs after network start
+    # so container is reachable via docker-proxy on localhost.
+    def ensure_influx_bucket(token, org, bucket):
+        import time
+        # Prefer requests if available, otherwise fallback to curl via subprocess
+        try:
+            import requests
+            use_requests = True
+        except Exception:
+            use_requests = False
+        url_base = 'http://127.0.0.1:8086'
+        headers = {'Authorization': f'Token {token}'}
+        # wait until /health is OK
+        for _ in range(20):
+            try:
+                if use_requests:
+                    r = requests.get(f'{url_base}/health', headers=headers, timeout=2)
+                    ok = (r.status_code == 200)
+                else:
+                    import subprocess
+                    rc = subprocess.run(['curl','-sS','-H',f'Authorization: Token {token}', f'{url_base}/health'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=3)
+                    ok = (rc.returncode == 0 and rc.stdout)
+                if ok:
+                    break
+            except Exception:
+                pass
+            time.sleep(1)
+        # verify token by listing orgs
+        try:
+            if use_requests:
+                r = requests.get(f'{url_base}/api/v2/orgs?org={org}', headers=headers, timeout=3)
+                if r.status_code != 200:
+                    info(f"[influx][WARN] token check failed status={r.status_code} body={r.text}\n")
+                    return False
+                orgs = r.json().get('orgs', [])
+            else:
+                import subprocess, json as _json
+                rc = subprocess.run(['curl','-sS','-H',f'Authorization: Token {token}', f'{url_base}/api/v2/orgs?org={org}'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=3)
+                if rc.returncode != 0:
+                    info('[influx][WARN] curl failed when listing orgs\n')
+                    return False
+                try:
+                    orgs = _json.loads(rc.stdout.decode()).get('orgs', [])
+                except Exception:
+                    info('[influx][WARN] failed to parse orgs json\n')
+                    return False
+            if not orgs:
+                info(f"[influx][WARN] org {org} not found\n")
+                return False
+            org_id = orgs[0]['id']
+            # check buckets
+            if use_requests:
+                rb = requests.get(f'{url_base}/api/v2/buckets?orgID={org_id}', headers=headers, timeout=3)
+                if rb.status_code != 200:
+                    info(f"[influx][WARN] buckets list failed {rb.status_code}\n")
+                    return False
+                buckets = rb.json().get('buckets', [])
+            else:
+                rc = subprocess.run(['curl','-sS','-H',f'Authorization: Token {token}', f'{url_base}/api/v2/buckets?orgID={org_id}'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=3)
+                try:
+                    import json as _json
+                    buckets = _json.loads(rc.stdout.decode()).get('buckets', [])
+                except Exception:
+                    info('[influx][WARN] failed to parse buckets json\n')
+                    return False
+            names = [b['name'] for b in buckets]
+            if bucket in names:
+                info(f"[influx] bucket '{bucket}' already exists\n")
+                return True
+            # create bucket
+            payload = { 'orgID': org_id, 'name': bucket, 'retentionRules': [] }
+            if use_requests:
+                rc = requests.post(f'{url_base}/api/v2/buckets', headers={**headers, 'Content-Type':'application/json'}, json=payload, timeout=5)
+                if rc.status_code in (200,201):
+                    info(f"[influx] bucket '{bucket}' created\n")
+                    return True
+                else:
+                    info(f"[influx][ERROR] failed to create bucket {rc.status_code} body={rc.text}\n")
+                    return False
+            else:
+                import subprocess, json as _json
+                rc = subprocess.run(['curl','-sS','-X','POST','-H',f'Authorization: Token {token}','-H','Content-Type: application/json','-d',_json.dumps(payload), f'{url_base}/api/v2/buckets'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5)
+                if rc.returncode == 0 and rc.stdout:
+                    info(f"[influx] bucket '{bucket}' created (curl)\n")
+                    return True
+                info('[influx][ERROR] curl failed to create bucket\n')
+                return False
+        except Exception as e:
+            info(f"[influx][ERROR] exception during ensure_influx_bucket: {e}\n")
+            return False
+
+    # read token/org/bucket from repo .env and try to ensure bucket
+    try:
+        repo_env = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')), '.env')
+        token = None; org = None; bucket = None
+        if os.path.exists(repo_env):
+            with open(repo_env) as ef:
+                for line in ef:
+                    if line.startswith('INFLUXDB_TOKEN='):
+                        token = line.strip().split('=',1)[1]
+                    if line.startswith('INFLUXDB_ORG=') or line.startswith('INFLUXDB_ORGANIZATION='):
+                        org = line.strip().split('=',1)[1]
+                    if line.startswith('INFLUXDB_BUCKET='):
+                        bucket = line.strip().split('=',1)[1]
+        if token and org and bucket:
+            try:
+                # try to import requests; if missing, fallback to curl call via subprocess
+                ensure_ok = ensure_influx_bucket(token, org, bucket)
+                if not ensure_ok:
+                    info('[influx][WARN] ensure_influx_bucket failed; you may need to re-bootstrap or check token\n')
+            except Exception:
+                info('[influx][WARN] python requests unavailable or ensure failed; skipping automatic bucket ensure\n')
+    except Exception:
+        pass
 
     # Pós-configuração de IPs nas interfaces (garante IP correto)
     info("[net] Configurando IPs nas interfaces dos containers\n")

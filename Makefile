@@ -304,6 +304,13 @@ check-simulator:
 	docker exec -it $(SIM) ping -c 2 10.10.1.2 || echo "[ERRO] $(SIM) não pinga tb"
 	docker exec -it $(SIM) bash -c 'nc -vz -w 2 10.10.1.2 8080' || echo "[ERRO] $(SIM) não conecta TCP 8080 em tb"
 
+# Topology health check: runs the comprehensive check script created in scripts/check_topology.sh
+.PHONY: topo-check
+topo-check:
+	@echo "[🔁] Running topology health checks (scripts/check_topology.sh)"
+	@chmod +x scripts/check_topology.sh || true
+	@./scripts/check_topology.sh
+
 # === HELPERS PARA EXECUTAR COMANDOS DENTRO DE CONTAINERS ===
 .PHONY: exec-middts exec-sim
 
