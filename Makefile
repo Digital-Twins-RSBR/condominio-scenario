@@ -15,7 +15,7 @@ MIDDTS_PATH = services/middleware-dt/
 SIMULATOR_PATH = services/iot_simulator/
 DOCKER_PATH = dockerfiles
 # === SETUP E LIMPEZA ===
-.PHONY: setup clean clean-veth clean-containers reset-db reset-tb
+.PHONY: setup clean clean-containers reset-db reset-db-tb reset-db-middts reset-db-influx reset-db-neo4j reset-db-sims reset-tb
 
 setup:
 	@echo "[Setup] Executar ./scripts/setup.sh"
@@ -32,22 +32,47 @@ clean:
 	@echo "[🧯] Limpando interfaces veth Mininet/Containernet"
 	@ip -o link show | awk -F': ' '{print $$2}' | cut -d'@' -f1 | grep -E '^(mn-|sim_|s[0-9]+-eth[0-9]+)' | sort | uniq | xargs -r -n1 sudo ip link delete || true
 
-clean-veth:
-	@echo "[🧯] Limpando interfaces veth Mininet/Containernet"
-	@ip -o link show | awk -F': ' '{print $$2}' | cut -d'@' -f1 | grep -E '^(mn-|sim_|s[0-9]+-eth[0-9]+)' | sort | uniq | xargs -r -n1 sudo ip link delete || true
-
 clean-containers:
 	docker ps -a --filter "name=mn." -q | xargs -r docker rm -f
 
-reset-db:
-	@echo "Removendo volume do banco de dados ThingsBoard, middts (db_data)..."
-	-docker volume rm db_data
-	@echo "Volume removido. O banco será recriado limpo no próximo start."
-	@echo "Removendo DBs locais dos simuladores para forcar restore (logs NÃO precisam ser apagados)"
+## High level reset: calls focused reset targets so operator can compose actions
+reset-db: reset-db-tb reset-db-middts reset-db-influx reset-db-neo4j reset-db-sims
+	@echo "[reset-db] Reset completo executado (best-effort)."
+
+# Reset ThingsBoard volumes (db + assets + logs)
+reset-db-tb:
+	@echo "[reset-db-tb] Removendo volumes do ThingsBoard (db_data, tb_assets, tb_logs)..."
+	-@docker volume rm db_data tb_assets tb_logs || true
+	@echo "[reset-db-tb] Volumes do ThingsBoard removidos (se existiam)."
+
+# Reset MidDiTS related volumes
+reset-db-middts:
+	@echo "[reset-db-middts] Removendo volumes relacionados ao MidDiTS"
+	-@docker volume ls --format '{{.Name}}' | grep -E 'middts|middleware' | xargs -r -n1 docker volume rm || true
+	@echo "[reset-db-middts] Concluído (best-effort)."
+
+# Reset InfluxDB volumes
+reset-db-influx:
+	@echo "[reset-db-influx] Removendo volumes relacionados ao InfluxDB"
+	-@docker volume rm influx_data influx_logs || true
+	-@docker volume ls --format '{{.Name}}' | grep -E 'influx|influxdb' | xargs -r -n1 docker volume rm || true
+	@echo "[reset-db-influx] Concluído (best-effort)."
+
+# Reset Neo4j volumes
+reset-db-neo4j:
+	@echo "[reset-db-neo4j] Removendo volumes relacionados ao Neo4j"
+	-@docker volume rm neo4j_data neo4j_logs || true
+	-@docker volume ls --format '{{.Name}}' | grep -E 'neo4j' | xargs -r -n1 docker volume rm || true
+	@echo "[reset-db-neo4j] Concluído (best-effort)."
+
+# Reset simulator host files and simulator volumes
+reset-db-sims:
+	@echo "[reset-db-sims] Removendo volumes e dados locais dos simuladores"
+	-@docker volume ls --format '{{.Name}}' | grep -E 'parser|sim_|simulator' | xargs -r -n1 docker volume rm || true
 	-@find services/iot_simulator -maxdepth 1 -type f -name 'db.sqlite3' -exec rm -f {} \; || true
 	@mkdir -p deploy || true
 	@touch deploy/.reset_sim_db
-	@echo "Simulators: DB local removido. deploy/.reset_sim_db marker criado; next topo run will force restore inside containers."
+	@echo "[reset-db-sims] Simulators: host DB removido; deploy/.reset_sim_db criado."
 
 reset-tb:
 	@echo "Removendo volumes do ThingsBoard (db_data, tb_assets, tb_logs)..."
@@ -152,30 +177,61 @@ ps:
 # Tail rápido dos logs de um simulador: make logs-sim SIM=sim_001
 logs-sim:
 	@tail -n 200 -f services/iot_simulator/logs/mn.$(SIM)_start.log || tail -n 200 -f deploy/logs/$(SIM)_start.log || true
+
+# Convenience targets to run the parser as an external Docker container
+.PHONY: run-parser stop-parser
+
+run-parser:
+	@echo "[run-parser] Starting external parser container (detached) using image $(PARSER_IMAGE)"
+	-@docker run -d --name parser -p 8082:8080 -p 8083:8081 --restart unless-stopped $(PARSER_IMAGE) || echo "[WARN] parser already running or failed to start"
+	@echo "[run-parser] If you need a different host port, override ports or start the container manually."
+
+stop-parser:
+	@echo "[stop-parser] Stopping and removing external parser container 'parser'"
+	-@docker rm -f parser || true
+	@echo "[stop-parser] Done."
 # === TOPOLOGIA E VISUALIZAÇÃO ===
 .PHONY: topo topo-screen draw
 
 topo:
 	@echo "[📡] Executando topologia com Containernet"
-	# Load SIMULATOR_COUNT from .env (repo root) or services/middleware-dt/.env if present.
-	# Fallback to 1 when not defined. Use VERBOSE=1 to enable verbose logs.
-	@SIM_ENV="$$(pwd)/.env"; \
-	if [ ! -f "$$SIM_ENV" ]; then SIM_ENV="$$(pwd)/services/middleware-dt/.env"; fi; \
-	if [ -f "$$SIM_ENV" ]; then . "$$SIM_ENV"; fi; \
-	SIMS="$${SIMULATOR_COUNT:-1}"; \
-	echo "[📡] Running topology with SIMULATOR_COUNT=$$SIMS (from $$SIM_ENV if present)"; \
-	if [ -z "$$VERBOSE" ]; then \
-		echo "[INFO] Executando topologia (quiet). Use VERBOSE=1 make topo for detailed logs"; \
-		. services/containernet/venv/bin/activate && sudo -E env PATH="$$PATH" python3 services/topology/topo_qos.py --sims $$SIMS --quiet; \
-	else \
-		echo "[INFO] Executando topologia (verbose)"; \
-		. services/containernet/venv/bin/activate && sudo -E env PATH="$$PATH" python3 services/topology/topo_qos.py --sims $$SIMS --verbose; \
-	fi
+	# Use the helper script to centralize environment handling and defaults.
+	# Default behavior preserves state (PRESERVE_STATE=1) unless overridden by caller.
+	@sh scripts/run_topo.sh
 
 topo-screen:
 	@echo "[📡] Executando topologia com Containernet em screen"
-	screen -S containernet -dm bash -c 'source services/containernet/venv/bin/activate && sudo -E env PATH="$$PATH" python3 services/topology/topo_qos.py'
+	# Start the topology inside a detached screen session. Honor PRESERVE_STATE if provided,
+	# default to 1 inside the screen command.
+	@screen -S containernet -dm sh -c 'if [ -z "$$PRESERVE_STATE" ]; then PRESERVE_STATE=1; fi; export PRESERVE_STATE; sh scripts/run_topo.sh'
 	@echo "Use: screen -r containernet  para acessar o CLI do Containernet"
+
+
+# === PREPARE / CLEAN BOOT FOR TOPOLOGY ===
+.PHONY: ensure-clean-boot
+ensure-clean-boot:
+	@echo "[🔁] ensure-clean-boot: verificação de volumes InfluxDB/Neo4j (remover se existirem)"
+	@SIM_ENV="$$(pwd)/.env"; \
+	if [ ! -f "$$SIM_ENV" ]; then SIM_ENV="$$(pwd)/services/middleware-dt/.env"; fi; \
+	if [ -f "$$SIM_ENV" ]; then . "$$SIM_ENV"; fi; \
+	# Allow operator to preserve state by passing PRESERVE_STATE=1 to make
+	if [ "$$PRESERVE_STATE" = "1" ]; then \
+		echo "[ℹ️] PRESERVE_STATE=1 set, skipping automatic volume removal."; \
+		exit 0; \
+	fi; \
+	# Note: ensure-clean-boot no longer auto-deletes InfluxDB/Neo4j data volumes.
+	# Use `make reset-db-influx` or `make reset-db-neo4j` to explicitly remove volumes.
+	if docker volume ls --format '{{.Name}}' | grep -E 'influx|influxdb' >/dev/null 2>&1; then \
+		echo "[⚠️] Influx volumes detected. Run 'make reset-db-influx' to remove them if you really want a fresh bootstrap."; \
+	else \
+		echo "[🔎] No Influx volumes found."; \
+	fi; \
+	if docker volume ls --format '{{.Name}}' | grep -E 'neo4j' >/dev/null 2>&1; then \
+		echo "[⚠️] Neo4j volumes detected. Run 'make reset-db-neo4j' to remove them if you really want a fresh bootstrap."; \
+	else \
+		echo "[🔎] No Neo4j volumes found."; \
+	fi; \
+	echo "[🔁] ensure-clean-boot: concluído. No volumes were removed."
 
 draw:
 	@echo "[🖼️ ] Gerando visualização da topologia"
@@ -279,12 +335,23 @@ check-neo4j:
 
 check-parser:
 	@echo "[🔎] Verificando container parser"
-	docker ps --format '{{.Names}}' | grep -q '^mn.parser$$' && echo "✅ Container mn.parser está rodando" || echo "❌ Container mn.parser não está rodando"
-	@echo "[🔎] Verificando serviço Parser (porta 8080)"
-	docker exec -it mn.parser bash -c 'nc -z -w 2 127.0.0.1 8080' && echo "✅ Parser ouvindo na porta 8080" || echo "❌ Parser não está ouvindo na porta 8080"
-	@echo "[🔎] Testando comunicação com middts"
-	docker exec -it mn.parser ping -c 2 10.10.2.2 || echo "[ERRO] parser não pinga middts"
-	docker exec -it mn.parser bash -c 'nc -vz -w 2 10.10.2.2 8000' || echo "[ERRO] parser não conecta TCP 8000 em middts"
+	@# Support either an in-topology mn.parser or an external container named 'parser'
+	@if docker ps --format '{{.Names}}' | grep -q '^mn.parser$$'; then \
+		echo "✅ Container mn.parser está rodando"; \
+		echo "[🔎] Verificando serviço Parser (porta 8080) dentro da topologia"; \
+		docker exec -it mn.parser bash -c 'nc -z -w 2 127.0.0.1 8080' && echo "✅ Parser (mn.parser) ouvindo na porta 8080" || echo "❌ Parser (mn.parser) não está ouvindo na porta 8080"; \
+		echo "[🔎] Testando comunicação com middts (rede interna)"; \
+		docker exec -it mn.parser ping -c 2 10.10.2.2 || echo "[ERRO] parser não pinga middts"; \
+		docker exec -it mn.parser bash -c 'nc -vz -w 2 10.10.2.2 8000' || echo "[ERRO] parser não conecta TCP 8000 em middts"; \
+	elif docker ps --format '{{.Names}}' | grep -q '^parser$$'; then \
+		echo "ℹ️ Container externo 'parser' está rodando (fora da topologia)"; \
+		echo "Ports:"; docker port parser || true; \
+		echo "Nota: parser é externo — verificações de rede internas (ping entre mn.*) serão ignoradas."; \
+		echo "Você pode testar acessibilidade via host com: nc -z -v -w 2 127.0.0.1 8082"; \
+	else \
+		echo "❌ Nenhum container 'parser' encontrado (nem mn.parser nem parser)"; \
+		echo "Inicie o parser externamente: make run-parser"; \
+	fi
 
 # Simuladores
 check-simulators:
@@ -377,7 +444,14 @@ check-network:
 	@echo "[neo4j] IPs e interfaces:"
 	docker exec -it mn.neo4j ip addr || echo "[ERRO] Falha ao obter IP do neo4j"
 	@echo "[parser] IPs e interfaces:"
-	docker exec -it mn.parser ip addr || echo "[ERRO] Falha ao obter IP do parser"
+		@if docker ps --format '{{.Names}}' | grep -q '^mn.parser$$'; then \
+			docker exec -it mn.parser ip addr || echo "[ERRO] Falha ao obter IP do parser"; \
+		elif docker ps --format '{{.Names}}' | grep -q '^parser$$'; then \
+			echo "[ℹ️] Parser está rodando como container externo 'parser'"; docker port parser || true; \
+			echo "[ℹ️] Parser é externo — não é possível exibir interfaces internas da topologia."; \
+		else \
+			echo "[WARN] Nenhum container parser detectado (mn.parser ou parser)"; \
+		fi
 	@echo "[tb <-> middts] ping e TCP"
 	docker exec -it mn.tb ping -c 2 10.10.2.2 || echo "[ERRO] tb não pinga middts"
 	docker exec -it mn.middts ping -c 2 10.10.1.2 || echo "[ERRO] middts não pinga tb"
@@ -403,9 +477,16 @@ check-network:
 	docker exec -it mn.neo4j ping -c 2 10.10.2.2 || echo "[ERRO] neo4j não pinga middts"
 	docker exec -it mn.middts bash -c 'nc -vz -w 2 10.10.2.30 7474' || echo "[ERRO] middts não conecta TCP 7474 em neo4j"
 	@echo "[middts <-> parser] ping e TCP"
-	docker exec -it mn.middts ping -c 2 10.10.2.40 || echo "[ERRO] middts não pinga parser"
-	docker exec -it mn.parser ping -c 2 10.10.2.2 || echo "[ERRO] parser não pinga middts"
-	docker exec -it mn.middts bash -c 'nc -vz -w 2 10.10.2.40 8080' || echo "[ERRO] middts não conecta TCP 8080 em parser"
+	@if docker ps --format '{{.Names}}' | grep -q '^mn.parser$$'; then \
+		docker exec -it mn.middts ping -c 2 10.10.2.40 || echo "[ERRO] middts não pinga parser"; \
+		docker exec -it mn.parser ping -c 2 10.10.2.2 || echo "[ERRO] parser não pinga middts"; \
+		docker exec -it mn.middts bash -c 'nc -vz -w 2 10.10.2.40 8080' || echo "[ERRO] middts não conecta TCP 8080 em parser"; \
+	elif docker ps --format '{{.Names}}' | grep -q '^parser$$'; then \
+		echo "[ℹ️] Parser rodando externamente — teste de conectividade via host:"; \
+		echo "nc -z -v -w 2 127.0.0.1 8082"; \
+	else \
+		echo "[WARN] Nenhum parser detectado para testar (mn.parser ou parser)"; \
+	fi
 	@echo "[Simuladores <-> tb] ping e TCP"
 	for i in 1 2 3 4 5; do \
 	  sim_ip="10.10.$$((10+i)).2"; \

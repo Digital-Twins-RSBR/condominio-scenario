@@ -152,6 +152,22 @@ make clean           # Remove repositórios
 make reset           # Para containers
 ```
 
+## 🧩 Executando o Parser (fora da topologia)
+
+O `parser` foi retirado da topologia Containernet e deve ser executado como um container Docker normal no host para que o MidDiTS (middts) possa acessá-lo via porta mapeada.
+
+Você pode usar os alvos do Makefile:
+
+```bash
+make run-parser   # Inicia um container 'parser' (detached) usando a imagem local parserwebapi-tools:latest
+make stop-parser  # Para e remove o container 'parser'
+```
+
+Por padrão o `make run-parser` mapeará as portas 8080->8082 e 8081->8083 no host. Ajuste manualmente se necessário.
+
+Os logs do parser (stdout/stderr) serão seguidos pelo assistente de topologia e gravados em `deploy/logs/parser_start.log` quando o container externo estiver rodando com o nome `parser`.
+
+
 ---
 
 ## Erros conhecidos

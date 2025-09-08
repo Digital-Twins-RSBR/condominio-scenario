@@ -131,6 +131,26 @@ def run_topo(num_sims=5):
 
     def safe_add(name, **kwargs):
         try:
+            # If a container with this name already exists, remove only the
+            # container (do not remove named volumes) so Containernet can
+            # recreate it attached to the correct network namespace.
+            cname = f"mn.{name}"
+            try:
+                # list any matching container id(s)
+                p = subprocess.run(['docker', 'ps', '-a', '--filter', f'name={cname}', '-q'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                ids = p.stdout.decode().strip().split() if p.stdout else []
+                if ids:
+                    info(f"[SAFE_ADD] found existing container(s) {ids} for {cname}; removing container(s) to allow Containernet to recreate (volumes preserved)\n")
+                    # remove all matching containers
+                    for cid in ids:
+                        try:
+                            subprocess.run(['docker', 'rm', '-f', cid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                        except Exception:
+                            pass
+            except Exception:
+                # best-effort: continue if docker not available or command fails
+                pass
+
             info(f"➕ Criando {name} — {kwargs}\n")
             return net.addDocker(name=name, **kwargs)
         except Exception as e:
@@ -239,7 +259,7 @@ def run_topo(num_sims=5):
         dimage=os.getenv('INFLUXDB_IMAGE','influxdb:2.7'),
         # use the daemon executable expected by official images
         dcmd='influxd',
-    ip='10.10.2.20/24',
+        ip='10.10.2.20/24',
         ports=[8086],
         port_bindings={8086: 8086},
         environment={
@@ -251,6 +271,8 @@ def run_topo(num_sims=5):
             'DOCKER_INFLUXDB_INIT_ADMIN_TOKEN': INFLUXDB_TOKEN
         },
         volumes=[
+            # Persistent data dir used by InfluxDB v2
+            'influx_data:/root/.influxdbv2',
             'influx_logs:/var/log/influxdb',
             f"{host_logs.get('influxdb')}:/var/log/influxdb_start.log",
         ],
@@ -259,37 +281,33 @@ def run_topo(num_sims=5):
     neo4j = safe_add_with_status('neo4j',
         dimage='neo4j-tools:latest',
         # Start Neo4j in foreground (console) so logs are streamable and
-        # the process binds correctly to the container network. Also ensure
-        # the server listens on 0.0.0.0 to be reachable from other containers.
-    dcmd="/bin/bash -lc 'echo \"server.default_listen_address=0.0.0.0\" >> /var/lib/neo4j/conf/neo4j.conf || true && /var/lib/neo4j/bin/neo4j console'",
-    ip='10.10.2.30/24',
-    ports=[7474, 7687],
-    port_bindings={7474: 7474, 7687: 7687},
+        # the process binds correctly to the container network. Ensure the
+        # server listen address line is present but avoid duplicating it
+        # when the data volume already contains neo4j.conf (idempotent).
+        dcmd="/bin/bash -lc 'grep -qxF \"server.default_listen_address=0.0.0.0\" /var/lib/neo4j/conf/neo4j.conf || echo \"server.default_listen_address=0.0.0.0\" >> /var/lib/neo4j/conf/neo4j.conf || true; /var/lib/neo4j/bin/neo4j console'",
+        ip='10.10.2.30/24',
+        ports=[7474, 7687],
+        port_bindings={7474: 7474, 7687: 7687},
         # Prefer middleware .env value for NEO4J_AUTH when available, otherwise use a safe default
         environment={
             'NEO4J_AUTH': os.environ.get('NEO4J_AUTH', 'neo4j/neo4j_pass'),
-            # Hint to the official image to bind to all interfaces. This
-            # mirrors the explicit config line we append above and helps
-            # newer images recognize the intent via env vars.
-            'NEO4J_dbms_default__listen__address': '0.0.0.0'
         },
         volumes=[
+            # Persistent data dir for Neo4j
+            'neo4j_data:/var/lib/neo4j',
             'neo4j_logs:/var/log/neo4j',
             f"{host_logs.get('neo4j')}:/var/log/neo4j_start.log",
         ],
         privileged=True
     )
-    parser = safe_add_with_status('parser',
-        dimage='parserwebapi-tools:latest',
-        dcmd="/bin/bash",
-        ports=[8080, 8081],
-        port_bindings={8080: 8082, 8081: 8083},
-        volumes=[
-            'parser_logs:/var/log/parser',
-            f"{host_logs.get('parser')}:/var/log/parser_start.log",
-        ],
-        privileged=True
-    )
+    # The parser is intentionally NOT created inside the Containernet topology.
+    # It depends on platform-specific components and should run as a regular
+    # Docker container on the host (outside Mininet). Example:
+    #   docker run -d --name parser -p 8082:8080 -p 8083:8081 parserwebapi-tools:latest
+    # Topology will still attempt to follow logs for a container named 'parser'
+    # (external) and will inject PARSER_HOST/PARSER_PORT into the middleware
+    # .env so middts can reach it.
+    parser = None
     # Start background followers that pipe container stdout/stderr (docker logs -f)
     # into the host-side files under deploy/logs/*. This ensures the
     # service startup logs are preserved even if the container writes to
@@ -303,7 +321,21 @@ def run_topo(num_sims=5):
             os.makedirs(os.path.dirname(host_path), exist_ok=True)
             # open in append-binary so we capture raw output and allow concurrent writes
             f = open(host_path, 'ab')
+            # prefer Containernet-managed container name mn.<name>; if not present,
+            # fall back to a plain container name (useful for externally-run parser)
             docker_name = f"mn.{name}"
+            try:
+                # check whether mn.<name> exists and is running
+                pchk = subprocess.run(['docker', 'ps', '-q', '--filter', f'name=^{docker_name}$'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                if not pchk.stdout or not pchk.stdout.strip():
+                    # try plain name
+                    alt = name
+                    pchk2 = subprocess.run(['docker', 'ps', '-q', '--filter', f'name=^{alt}$'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                    if pchk2.stdout and pchk2.stdout.strip():
+                        docker_name = alt
+            except Exception:
+                # ignore detection errors and keep docker_name as mn.<name>
+                pass
             # Use docker logs -f to follow; keep process attached to this python runtime
             p = subprocess.Popen(['docker', 'logs', '-f', docker_name], stdout=f, stderr=subprocess.STDOUT)
             LOG_FOLLOW_PROCS.append((p, f))
@@ -319,6 +351,39 @@ def run_topo(num_sims=5):
         follow_container_logs('parser', host_logs.get('parser'))
     except Exception:
         # Non-fatal: best-effort
+        pass
+
+    # Helper: check whether a named docker volume contains files (non-empty)
+    def docker_volume_is_nonempty(volname, timeout=5):
+        try:
+            # Run a transient busybox container to list the mountpoint contents
+            p = subprocess.run(['docker', 'run', '--rm', '-v', f'{volname}:/mnt:ro', 'busybox', 'sh', '-c', 'ls -A /mnt || true'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout)
+            out = p.stdout.decode().strip()
+            return bool(out)
+        except Exception:
+            # If we cannot inspect, assume non-empty to be safe
+            return True
+
+    # Log whether Influx/Neo4j volumes look already-initialized (helps avoid accidental re-bootstrap)
+    try:
+        try:
+            influx_init_present = docker_volume_is_nonempty('influx_data')
+            if influx_init_present:
+                info('[influx][INFO] detected existing influx_data volume -> bootstrap env vars will be ignored by Influx (preserving data)\n')
+            else:
+                info('[influx][INFO] influx_data appears empty -> initial bootstrap env vars will be applied by Influx on first start\n')
+        except Exception:
+            pass
+        try:
+            neo4j_init_present = docker_volume_is_nonempty('neo4j_data')
+            if neo4j_init_present:
+                info('[neo4j][INFO] detected existing neo4j_data volume -> bootstrap env vars (NEO4J_AUTH) will be ignored by Neo4j\n')
+            else:
+                info('[neo4j][INFO] neo4j_data appears empty -> initial bootstrap env vars will be applied by Neo4j on first start\n')
+        except Exception:
+            pass
+    except Exception:
+        # non-fatal; continue
         pass
     # ...existing code...
 
@@ -375,19 +440,21 @@ def run_topo(num_sims=5):
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
     repo_env = os.path.join(repo_root, '.env')
     INFLUXDB_TOKEN = 'token'  # fallback default
-    try:
-        if os.path.exists(repo_env):
-            with open(repo_env, 'r') as ef:
-                for line in ef:
-                    line = line.strip()
-                    if not line or line.startswith('#'):
-                        continue
-                    if line.startswith('INFLUXDB_TOKEN='):
-                        INFLUXDB_TOKEN = line.split('=', 1)[1]
-                        break
-    except Exception:
-        # best-effort: if reading fails, keep the default token
-        pass
+    def read_repo_env_value(key, default=None):
+        try:
+            if os.path.exists(repo_env):
+                with open(repo_env, 'r') as ef:
+                    for line in ef:
+                        line = line.strip()
+                        if not line or line.startswith('#'):
+                            continue
+                        if line.startswith(key + '='):
+                            return line.split('=', 1)[1]
+        except Exception:
+            pass
+        return default
+    # initial load (may be reloaded later before container creation)
+    INFLUXDB_TOKEN = read_repo_env_value('INFLUXDB_TOKEN', INFLUXDB_TOKEN)
     # Also read org and bucket from repo .env if present
     INFLUXDB_ORG = 'org'
     INFLUXDB_BUCKET = 'bucket'
@@ -565,6 +632,21 @@ def run_topo(num_sims=5):
         info(f"[pg][ERRO] Falha ao garantir database '{dbname}'. tokens2={tokens2}\n")
         return False, False
 
+    # Helper: wait until the underlying Docker container for mn.<name> is Running
+    def wait_for_docker_running(name, timeout=15):
+        cname = f"mn.{name}"
+        for i in range(timeout * 2):
+            try:
+                p = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", cname], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                out = p.stdout.decode().strip()
+                if out == 'true':
+                    return True
+            except Exception:
+                pass
+            time.sleep(0.5)
+        print(f"[WARN] container {cname} not running after {timeout}s")
+        return False
+
     # Agora sim, sobe o middts já com o .env correto
     middts = safe_add_with_status('middts',
         dimage=os.getenv('MIDDTS_IMAGE', 'middts-custom:latest'),
@@ -574,7 +656,8 @@ def run_topo(num_sims=5):
         port_bindings={8000: 8000},
         environment={
             'DJANGO_SETTINGS_MODULE': 'middleware_dt.settings',
-            'INFLUXDB_TOKEN': INFLUXDB_TOKEN,
+            # ensure token is freshly read from repo .env at creation time
+            'INFLUXDB_TOKEN': read_repo_env_value('INFLUXDB_TOKEN', INFLUXDB_TOKEN),
             'DEFER_START': '1'
         },
         volumes=[
@@ -589,7 +672,8 @@ def run_topo(num_sims=5):
     # Abort early if any critical service failed to create. This avoids later
     # AttributeError when trying to add links to a None node and provides a
     # clearer error message to the operator.
-    critical = {'db': pg, 'influxdb': influxdb, 'neo4j': neo4j, 'parser': parser, 'tb': tb, 'middts': middts}
+    # parser is external; do not require it as a critical in-topology container
+    critical = {'db': pg, 'influxdb': influxdb, 'neo4j': neo4j, 'tb': tb, 'middts': middts}
     missing = [name for name, node in critical.items() if node is None]
     if missing:
         print(f"[ERROR] Falha ao criar containers criticos: {missing}; abortando topologia.")
@@ -695,8 +779,10 @@ def run_topo(num_sims=5):
         host_sim_env = os.path.join(sim_project_root, '.env')
         if os.path.exists(host_sim_env):
             vols.insert(0, f"{host_sim_env}:/iot_simulator/.env")
+        # Read token at simulator creation time so it matches repo .env
+        sim_token = read_repo_env_value('INFLUXDB_TOKEN', INFLUXDB_TOKEN)
         env = {
-            'INFLUXDB_TOKEN': INFLUXDB_TOKEN,
+            'INFLUXDB_TOKEN': sim_token,
             'INFLUXDB_HOST': INFLUXDB_HOST,
             'INFLUXDB_ORG': INFLUXDB_ORG,
             'INFLUXDB_BUCKET': INFLUXDB_BUCKET,
@@ -737,6 +823,22 @@ def run_topo(num_sims=5):
             info(f"[sim] {sim.name} criado — restore_db será executado antes do entrypoint, se disponível.\n")
 
     # Ligações: cada host ao seu switch
+    # Ensure the underlying Docker containers are up and running before
+    # attempting to move veth interfaces into them. This reduces race
+    # conditions where moveIntf fails with "RTNETLINK answers: No such process".
+    try:
+        info('[net] aguardando containers docker críticos estarem Running antes de adicionar links...\n')
+        for svc in ('tb', 'middts', 'db', 'influxdb', 'neo4j'):
+            try:
+                wait_for_docker_running(svc, timeout=30)
+                # small safety sleep to let the container runtime settle
+                time.sleep(0.2)
+            except Exception:
+                info(f"[net][WARN] esperando por container {svc} falhou ou expirou\n")
+    except Exception:
+        # non-fatal: continue and let net.addLink attempts proceed
+        pass
+
     net.addLink(tb, s1)
     net.addLink(middts, s2)
     net.addLink(s1, s2)
@@ -755,12 +857,13 @@ def run_topo(num_sims=5):
     net.addLink(pg, s1)
     net.addLink(pg, s2)
     # Influx: middts e simuladores
+    # Ensure switch s1 (ThingsBoard) can also reach InfluxDB
+    net.addLink(influxdb, s1)
     net.addLink(influxdb, s2)
     for s_sim in sim_switches:
         net.addLink(influxdb, s_sim)
     # Neo4j e parser: só middts
     net.addLink(neo4j, s2)
-    net.addLink(parser, s2)
 
     # === IPs e rotas ===
     info("[net] Configurando IPs e rotas\n")
@@ -815,15 +918,101 @@ def run_topo(num_sims=5):
     neo4j.cmd("ip link set neo4j-eth0 up")
     neo4j.cmd("ip route add 10.10.0.0/16 dev neo4j-eth0 || true")
 
-    # Parser
-    parser.cmd("ip addr flush dev parser-eth0 scope global || true")
-    parser.cmd("ip addr add 10.10.2.40/24 dev parser-eth0 || true")
-    parser.cmd("ip link set parser-eth0 up")
-    parser.cmd("ip route add 10.10.0.0/16 dev parser-eth0 || true")
+    # Parser runs outside the Containernet topology; no in-topology IPs configured.
 
 
     # Agora sim, inicia a rede
     net.start()
+
+    # Ensure the underlying Docker containers are Running before we
+    # execute commands that expect the network interfaces to be present.
+    # This is critical to avoid moveIntf "No such process" errors.
+    try:
+        info('[net] aguardando containers docker estarem Running após net.start()...\n')
+        for svc in ('tb', 'middts', 'db', 'influxdb', 'neo4j'):
+            ok = wait_for_docker_running(svc, timeout=30)
+            if not ok:
+                info(f"[net][ERROR] container mn.{svc} not running after wait; aborting topology start to avoid moveIntf failures\n")
+                # stop network and exit early
+                try:
+                    net.stop()
+                except Exception:
+                    pass
+                return
+            # short safety pause
+            time.sleep(0.1)
+    except Exception:
+        # non-fatal: proceed and let later checks catch issues
+        pass
+
+    # Additional check: verify container network namespace exists and host-side veth peer is present.
+    def wait_for_container_net_ready(name, iface_hint=None, timeout=20):
+        cname = f"mn.{name}"
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                # get PID of container
+                p = subprocess.run(['docker', 'inspect', '-f', '{{.State.Pid}}', cname], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                pid = p.stdout.decode().strip()
+                if pid and pid != '0':
+                    # check that /proc/<pid>/ns/net exists
+                    ns_path = f'/proc/{pid}/ns/net'
+                    if os.path.exists(ns_path):
+                        # optionally check host-side interface presence if hint provided
+                        if iface_hint:
+                            # look for a host link whose name contains the service iface_hint
+                            out = subprocess.run(['ip', '-o', 'link', 'show'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                            if iface_hint in out.stdout.decode():
+                                return True
+                        else:
+                            return True
+            except Exception:
+                pass
+            time.sleep(0.5)
+        return False
+
+    try:
+        # For the services that previously failed with moveIntf, perform an extra readiness check
+        for svc, hint in (('neo4j','neo4j-eth0'), ('influxdb','influxdb-eth0')):
+            ok = wait_for_container_net_ready(svc, iface_hint=hint, timeout=25)
+            if not ok:
+                info(f"[net][WARN] container {svc} network namespace or host veth not detected after wait; moveIntf may fail\n")
+    except Exception:
+        pass
+
+    # Further ensure network namespace and veth peer exist for critical containers
+    def wait_for_container_netns_and_veth(svc, veth_suffix=None, timeout=20):
+        """Wait until docker reports mn.<svc> running and the expected veth peer appears on host.
+        veth_suffix: when provided, look for a host veth that contains this suffix (e.g., 'neo4j-eth0')
+        """
+        cname = f"mn.{svc}"
+        end = time.time() + timeout
+        while time.time() < end:
+            try:
+                p = subprocess.run(['docker', 'inspect', '-f', '{{.State.Running}}', cname], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                if p.returncode == 0 and p.stdout.decode().strip() == 'true':
+                    # if veth_suffix provided, check host ip link for peer name
+                    if veth_suffix:
+                        # host veth names often include the container interface name as suffix; try to find it
+                        out = subprocess.run(['ip', '-o', 'link', 'show'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                        links = out.stdout.decode()
+                        if veth_suffix in links:
+                            return True
+                    else:
+                        return True
+            except Exception:
+                pass
+            time.sleep(0.25)
+        return False
+
+    try:
+        # wait longer for influxdb and neo4j network peers specifically
+        if not wait_for_container_netns_and_veth('influxdb', veth_suffix='influxdb-eth0', timeout=30):
+            info('[net][WARN] influxdb veth/namespace not visible after wait; moveIntf may fail\n')
+        if not wait_for_container_netns_and_veth('neo4j', veth_suffix='neo4j-eth0', timeout=30):
+            info('[net][WARN] neo4j veth/namespace not visible after wait; moveIntf may fail\n')
+    except Exception:
+        pass
 
     # After network start, discover container IPs and inject into .env files
     try:
@@ -883,6 +1072,34 @@ def run_topo(num_sims=5):
             upsert_env(md_env_path, 'INFLUXDB_TOKEN', INFLUXDB_TOKEN)
             upsert_env(md_env_path, 'NEO4J_URL', f'bolt://{neo4j_ip}:7687')
             # keep NEO4J_AUTH untouched
+            # Injector for external parser: prefer a running docker container named 'parser'
+            parser_host = None
+            parser_port = None
+            try:
+                p = subprocess.run(['docker', 'ps', '--filter', 'name=^parser$', '--format', '{{.Names}} {{.Ports}}'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                out = p.stdout.decode().strip()
+                if out:
+                    # output like: "parser 0.0.0.0:8082->8080/tcp, 0.0.0.0:8083->8081/tcp"
+                    parts = out.split(None, 1)
+                    parser_host = '127.0.0.1'
+                    if len(parts) > 1 and '->' in parts[1]:
+                        # find first host port mapping
+                        proto_parts = parts[1].split(',')
+                        first = proto_parts[0].strip()
+                        if ':' in first:
+                            hp = first.split(':')[-1]
+                            if '->' in hp:
+                                hp = hp.split('->')[0]
+                            parser_port = hp.split('-')[0]
+                # fallback to repo .env or defaults
+            except Exception:
+                pass
+            if not parser_host:
+                # try read from repo .env (PARSER_HOST/PARSER_PORT) or fallback
+                parser_host = read_repo_env_value('PARSER_HOST', '127.0.0.1')
+                parser_port = read_repo_env_value('PARSER_PORT', '8082')
+            upsert_env(md_env_path, 'PARSER_HOST', parser_host)
+            upsert_env(md_env_path, 'PARSER_PORT', str(parser_port))
         except Exception:
             pass
 
@@ -893,6 +1110,12 @@ def run_topo(num_sims=5):
             upsert_env(sim_env_path, 'INFLUXDB_BUCKET', INFLUXDB_BUCKET)
             upsert_env(sim_env_path, 'INFLUXDB_ORGANIZATION', INFLUXDB_ORG)
             upsert_env(sim_env_path, 'INFLUXDB_TOKEN', INFLUXDB_TOKEN)
+            # Simulators don't call the parser directly, but keep PARSER_* vars in sync
+            try:
+                upsert_env(sim_env_path, 'PARSER_HOST', read_repo_env_value('PARSER_HOST', '127.0.0.1'))
+                upsert_env(sim_env_path, 'PARSER_PORT', read_repo_env_value('PARSER_PORT', '8082'))
+            except Exception:
+                pass
         except Exception:
             pass
     except Exception:
