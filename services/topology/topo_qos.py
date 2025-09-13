@@ -851,6 +851,7 @@ def run_topo(num_sims=5):
             # ignore se já existir
             pass
         net.addLink(s_sim, tb)
+        net.addLink(s_sim, influxdb)
 
     # Serviços centrais ligados a todos os switches necessários
     # Postgres: todos precisam menos os simuladores que usam sqlite3
