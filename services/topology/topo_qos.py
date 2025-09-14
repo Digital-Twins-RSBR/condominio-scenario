@@ -344,6 +344,143 @@ def run_topo(num_sims=5):
         except Exception as e:
             info(f"[logs][WARN] falha ao seguir logs de {name}: {e}\n")
 
+    # --- proxy supervisor helpers -------------------------------------------------
+    # Keep track of proxy subprocesses and restart attempts
+    PROXY_PROCS = {}  # svc_name -> subprocess.Popen
+    PROXY_RESTARTS = {}  # svc_name -> int
+    PROXY_MAX_RESTARTS = 5
+    PROXY_RESTART_BACKOFF = 2.0  # seconds, multiplied per restart
+
+    def _get_container_pid(name, timeout=15):
+        """Return PID of docker container mn.<name> or None if not found within timeout."""
+        cname = f"mn.{name}"
+        for _ in range(timeout):
+            try:
+                p = subprocess.run(['docker', 'inspect', '--format', '{{.State.Pid}}', cname], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                if p.stdout:
+                    pid = p.stdout.decode().strip()
+                    if pid and pid.isdigit() and int(pid) > 0:
+                        return int(pid)
+            except Exception:
+                pass
+            time.sleep(1)
+        return None
+
+    def _start_host_socat_to_container_unix(pid, container_sock_path, host_port, logfile_path=None):
+        """Start a host socat process forwarding TCP localhost:host_port -> /proc/<pid>/root/<container_sock_path>.
+        Returns subprocess.Popen or raises Exception on failure.
+        """
+        # Build absolute path inside host procfs
+        proc_sock = f"/proc/{pid}/root/{container_sock_path.lstrip('/')}"
+        # Use reuseaddr,fork so multiple clients are handled and socat can be restarted safely
+        cmd = ['socat', f'TCP-LISTEN:{host_port},reuseaddr,fork', f'UNIX-CONNECT:{proc_sock}']
+        # Open logfile if provided
+        stdout = subprocess.DEVNULL
+        stderr = subprocess.DEVNULL
+        lf = None
+        if logfile_path:
+            try:
+                os.makedirs(os.path.dirname(logfile_path), exist_ok=True)
+                lf = open(logfile_path, 'ab')
+                stdout = lf
+                stderr = lf
+            except Exception:
+                lf = None
+        p = subprocess.Popen(cmd, stdout=stdout, stderr=stderr)
+        # attach logfile to proc tuple so caller can close it later
+        return (p, lf)
+
+    def start_proxy_safe(container_name, svc_name, container_sock_path, host_port, host_logpath=None):
+        """Ensure a host socat proxy exists forwarding to container's UNIX socket.
+        This function is idempotent: if proxy already running for svc_name, it does nothing.
+        """
+        if svc_name in PROXY_PROCS and PROXY_PROCS[svc_name] and PROXY_PROCS[svc_name][0].poll() is None:
+            # already running
+            return PROXY_PROCS[svc_name][0]
+
+        pid = _get_container_pid(container_name, timeout=15)
+        if not pid:
+            raise RuntimeError(f"container {container_name} PID not found or container not started yet")
+
+        # Try starting host socat and supervise it
+        try:
+            p, lf = _start_host_socat_to_container_unix(pid, container_sock_path, host_port, logfile_path=host_logpath)
+            PROXY_PROCS[svc_name] = (p, lf)
+            PROXY_RESTARTS[svc_name] = 0
+            if QUIET:
+                print(f"[PROXY] started proxy {svc_name} -> pid={pid} host_port={host_port}")
+            return p
+        except Exception as e:
+            raise
+
+    def stop_all_proxies():
+        """Terminate all running proxy processes and close logfiles."""
+        for svc, tup in list(PROXY_PROCS.items()):
+            try:
+                p, lf = tup
+                if p and p.poll() is None:
+                    p.terminate()
+                    try:
+                        p.wait(timeout=3)
+                    except Exception:
+                        p.kill()
+                if lf:
+                    try:
+                        lf.close()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            PROXY_PROCS.pop(svc, None)
+            PROXY_RESTARTS.pop(svc, None)
+
+    def _supervise_proxies_once():
+        """Single-pass supervisor that restarts any stopped proxies with backoff and caps."""
+        for svc, tup in list(PROXY_PROCS.items()):
+            try:
+                p, lf = tup
+                if p.poll() is None:
+                    continue
+                # process terminated; consider restart
+                restarts = PROXY_RESTARTS.get(svc, 0) + 1
+                if restarts > PROXY_MAX_RESTARTS:
+                    if QUIET:
+                        print(f"[PROXY] {svc} exceeded max restarts ({PROXY_MAX_RESTARTS}), not restarting")
+                    PROXY_PROCS.pop(svc, None)
+                    PROXY_RESTARTS.pop(svc, None)
+                    continue
+                # exponential backoff
+                backoff = PROXY_RESTART_BACKOFF * restarts
+                if QUIET:
+                    print(f"[PROXY] restarting {svc} (attempt {restarts}) after {backoff}s")
+                time.sleep(backoff)
+                # try to restart by re-obtaining container name mapping stored in svc name convention
+                # svc name format expected: '<svc>' previously mapped to container mn.<container_name>
+                # We assume the container name equals svc or 'mn.' prefix is used elsewhere.
+                # Attempt a best-effort restart: try mn.<svc> then <svc>
+                container_try = f"mn.{svc}"
+                pid = _get_container_pid(svc, timeout=5) or _get_container_pid(container_try, timeout=5)
+                if not pid:
+                    PROXY_RESTARTS[svc] = restarts
+                    continue
+                # default UDS path placed under /tmp/<svc>.sock inside container
+                container_sock_path = f"/tmp/{svc}.sock"
+                host_port = None
+                # attempt to infer host_port by scanning previous process command; fallback to well-known ports
+                # For robustness, user should call start_proxy_safe with explicit host_port; here we fallback to common ports
+                common_ports = {'influxdb': 8086, 'middts': 8000, 'tb': 8080, 'neo4j': 7474}
+                host_port = common_ports.get(svc, None)
+                try:
+                    p2, lf2 = _start_host_socat_to_container_unix(pid, container_sock_path, host_port, logfile_path=None)
+                    PROXY_PROCS[svc] = (p2, lf2)
+                    PROXY_RESTARTS[svc] = restarts
+                except Exception:
+                    PROXY_RESTARTS[svc] = restarts
+                    continue
+            except Exception:
+                continue
+
+
     # Start followers for the three services of interest if their host paths exist
     try:
         follow_container_logs('influxdb', host_logs.get('influxdb'))
