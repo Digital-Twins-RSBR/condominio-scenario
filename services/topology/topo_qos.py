@@ -1152,6 +1152,113 @@ def run_topo(num_sims=5):
     except Exception:
         pass
 
+    # Ensure critical container interfaces are actually UP and have the expected IP
+    # inside their network namespace. This avoids the need for manual nsenter
+    # when moveIntf or net.start() leaves the container-side veth down or
+    # missing the assigned IP (race observed in practice).
+    def ensure_container_iface_up(name, iface, ip_cidr, route_cidr='10.10.0.0/16', retries=6, delay=0.5):
+        """Idempotently ensure that container mn.<name> has `iface` UP and `ip_cidr` assigned.
+        Uses nsenter against the container PID obtained via _get_container_pid.
+        Returns True if successful or already configured, False otherwise.
+        """
+        try:
+            pid = _get_container_pid(name, timeout=10)
+            if not pid:
+                info(f"[net][WARN] cannot ensure iface for {name}: container PID not found\n")
+                return False
+            for attempt in range(retries):
+                try:
+                    # Check if the IP is already present on the iface
+                    p = subprocess.run(['nsenter', '-t', str(pid), '-n', 'ip', '-o', 'addr', 'show', 'dev', iface], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                    out = p.stdout.decode().strip()
+                    if ip_cidr.split('/')[0] in out:
+                        # ensure link up and route present
+                        subprocess.run(['nsenter', '-t', str(pid), '-n', 'ip', 'link', 'set', iface, 'up'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        subprocess.run(['nsenter', '-t', str(pid), '-n', 'ip', 'route', 'add', route_cidr, 'dev', iface], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        return True
+                    # attempt to bring link up and add ip/route
+                    subprocess.run(['nsenter', '-t', str(pid), '-n', 'ip', 'link', 'set', iface, 'up'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    subprocess.run(['nsenter', '-t', str(pid), '-n', 'ip', 'addr', 'add', ip_cidr, 'dev', iface], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    subprocess.run(['nsenter', '-t', str(pid), '-n', 'ip', 'route', 'add', route_cidr, 'dev', iface], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except Exception:
+                    # ignore and retry
+                    pass
+                time.sleep(delay * (attempt + 1))
+            info(f"[net][WARN] failed to ensure iface {iface} in container {name} after {retries} attempts\n")
+            return False
+        except Exception:
+            return False
+
+    try:
+        # Try to ensure the Influx and Neo4j interfaces are configured inside their
+        # container network namespaces. This fixes the common case where simulators
+        # cannot reach Influx at 10.10.2.20 because the container-side veth was left
+        # down or without the IP assigned.
+        ensure_container_iface_up('influxdb', 'influxdb-eth0', '10.10.2.20/24')
+        # Ensure the Influx container has an explicit route back to the simulator
+        # fabric so replies (SYN-ACK) go out via influxdb-eth0 with the 10.10.2.20
+        # source address. This prevents asymmetric routing where the kernel would
+        # send replies out via the docker bridge (172.17.x) and the TCP handshake
+        # would never complete.
+        ensure_container_route('influxdb', '10.0.0.0/24', 'influxdb-eth0')
+        ensure_container_iface_up('neo4j', 'neo4j-eth0', '10.10.2.30/24')
+    except Exception:
+        # non-fatal; continue
+        pass
+
+    # Ensure simulators have a route to the 10.10.0.0/16 fabric via their sim_xxx-eth0
+    # interface so they can reach Influx (10.10.2.20) even if Docker's default route
+    # points at the bridge (172.17.x.x). This is idempotent and will be applied
+    # on each topology start.
+    def ensure_container_route(name, dest_cidr, dev, src=None, retries=6, delay=0.5):
+        try:
+            pid = _get_container_pid(name, timeout=10)
+            if not pid:
+                info(f"[net][WARN] cannot ensure route for {name}: container PID not found\n")
+                return False
+            for attempt in range(retries):
+                try:
+                    # check if route already exists
+                    p = subprocess.run(['nsenter', '-t', str(pid), '-n', 'ip', 'route', 'show', dest_cidr], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                    out = p.stdout.decode().strip()
+                    if out:
+                        return True
+                    # If src not provided and dest is a single host, attempt to derive src from the device IP
+                    add_cmd = ['nsenter', '-t', str(pid), '-n', 'ip', 'route', 'add', dest_cidr, 'dev', dev]
+                    if not src and dest_cidr.endswith('/32'):
+                        try:
+                            p2 = subprocess.run(['nsenter', '-t', str(pid), '-n', 'ip', '-o', '-4', 'addr', 'show', 'dev', dev], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                            out2 = p2.stdout.decode().strip()
+                            if out2:
+                                # extract the first IPv4 address
+                                ip4 = out2.split()[-1].split('/')[0]
+                                if ip4:
+                                    add_cmd += ['src', ip4]
+                        except Exception:
+                            pass
+                    elif src:
+                        add_cmd += ['src', src]
+                    # add route via device (optionally with src)
+                    subprocess.run(add_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except Exception:
+                    pass
+                time.sleep(delay * (attempt + 1))
+            info(f"[net][WARN] failed to add route {dest_cidr} via {dev} in container {name}\n")
+            return False
+        except Exception:
+            return False
+
+    try:
+        for i in range(1, num_sims + 1):
+            sim_name = f"sim_{i:03d}"
+            sim_iface = f"{sim_name}-eth0"
+            ensure_container_route(sim_name, '10.10.0.0/16', sim_iface)
+            # Also add a specific host route for the Influx address so the kernel
+            # selects the simulator's 10.0.0.x source when connecting to 10.10.2.20.
+            ensure_container_route(sim_name, '10.10.2.20/32', sim_iface)
+    except Exception:
+        pass
+
     # After network start, discover container IPs and inject into .env files
     try:
         # helper to resolve Mininet/Containernet container objects to docker names/IPs
@@ -1406,6 +1513,31 @@ def run_topo(num_sims=5):
         sim.cmd(f"ip link set {sim_if} up")
         sim.cmd(f"ip route add 10.0.0.0/24 dev {sim_if} || true")
 
+    # Re-ensure Influx interface and routes and per-simulator routes here to
+    # mitigate Containernet moveIntf races where veth peers might be briefly
+    # down or missing IP/route assignments. This block is idempotent and will
+    # attempt several times via the helpers defined above.
+    try:
+        # ensure influx iface + route back to simulator fabric
+        ensure_container_iface_up('influxdb', 'influxdb-eth0', '10.10.2.20/24')
+        ensure_container_route('influxdb', '10.0.0.0/24', 'influxdb-eth0')
+    except Exception:
+        pass
+    try:
+        for idx in range(1, num_sims + 1):
+            sim_name = f"sim_{idx:03d}"
+            sim_iface = f"{sim_name}-eth0"
+            # ensure simulators have specific host route to Influx so source IP
+            # selection uses the sim 10.0.0.x address
+            try:
+                ensure_container_route(sim_name, '10.10.0.0/16', sim_iface)
+                ensure_container_route(sim_name, '10.10.2.20/32', sim_iface)
+            except Exception:
+                # best-effort per-simulator
+                pass
+    except Exception:
+        pass
+
     # Depois que a rede subiu e IPs atribuídos, chame o entrypoint dos simuladores para inicializar app
     info("[sim] Iniciando entrypoints dos simuladores (em background)...\n")
     for idx, sim in enumerate(simuladores, 1):
@@ -1524,6 +1656,63 @@ def run_topo(num_sims=5):
             sim.cmd(f"/entrypoint.sh > {logf} 2>&1 &")
         except Exception as e:
             info(f"[sim][WARN] falha ao iniciar entrypoint em {sim.name}: {e}\n")
+
+    # --- Smoke-test: check Influx /health and a small POST from sim_001 and log results ---
+    def _smoke_test_influx(sim_name='sim_001'):
+        try:
+            # locate repo .env and host log path
+            repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+            repo_env = os.path.join(repo_root, '.env')
+            token = None; org = None; bucket = None
+            if os.path.exists(repo_env):
+                try:
+                    with open(repo_env) as ef:
+                        for line in ef:
+                            if line.startswith('INFLUXDB_TOKEN='):
+                                token = line.strip().split('=',1)[1]
+                            if line.startswith('INFLUXDB_ORG=') or line.startswith('INFLUXDB_ORGANIZATION='):
+                                org = line.strip().split('=',1)[1]
+                            if line.startswith('INFLUXDB_BUCKET='):
+                                bucket = line.strip().split('=',1)[1]
+                except Exception:
+                    pass
+            log_path = host_logs.get('influxdb')
+            if not log_path:
+                return False
+            # build commands
+            health_cmd = (
+                f"docker run --rm --network container:mn.{sim_name} curlimages/curl:8.3.0 -sS -o /dev/stderr -w 'HTTP%{{http_code}}\\n' --max-time 3 http://10.10.2.20:8086/health"
+            )
+            post_cmd = (
+                f"docker run --rm --network container:mn.{sim_name} curlimages/curl:8.3.0 -sS -o /dev/stderr -w 'HTTP%{{http_code}}\\n' -XPOST 'http://10.10.2.20:8086/api/v2/write?org={org or ''}&bucket={bucket or ''}&precision=ms' -d 'm,host=smoke value=1' --max-time 5"
+            )
+            if token:
+                post_cmd = post_cmd.replace("-XPOST", f"-H 'Authorization: Token {token}' -XPOST")
+            ts = time.strftime('%Y-%m-%d %H:%M:%S')
+            try:
+                with open(log_path, 'a') as lf:
+                    lf.write(f"[{ts}] [SMOKE] HEALTH_CMD: {health_cmd}\n")
+                    try:
+                        p = subprocess.run(health_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                        lf.write(f"[{ts}] [SMOKE][HEALTH] {p.stdout.decode(errors='ignore')}\n")
+                    except Exception as e:
+                        lf.write(f"[{ts}] [SMOKE][HEALTH][ERR] {e}\n")
+                    lf.write(f"[{ts}] [SMOKE] POST_CMD: {post_cmd}\n")
+                    try:
+                        p2 = subprocess.run(post_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                        lf.write(f"[{ts}] [SMOKE][POST] {p2.stdout.decode(errors='ignore')}\n")
+                    except Exception as e:
+                        lf.write(f"[{ts}] [SMOKE][POST][ERR] {e}\n")
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
+
+    try:
+        _smoke_test_influx('sim_001')
+    except Exception:
+        pass
 
     CLI(net)
     net.stop()
