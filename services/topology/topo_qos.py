@@ -592,6 +592,8 @@ def run_topo(num_sims=5):
         return default
     # initial load (may be reloaded later before container creation)
     INFLUXDB_TOKEN = read_repo_env_value('INFLUXDB_TOKEN', INFLUXDB_TOKEN)
+    # Read USE_NEO4J from repo .env if present so middts inherits the operator choice
+    USE_NEO4J = read_repo_env_value('USE_NEO4J', 'true')
     # Also read org and bucket from repo .env if present
     INFLUXDB_ORG = 'org'
     INFLUXDB_BUCKET = 'bucket'
@@ -629,6 +631,8 @@ def run_topo(num_sims=5):
                 new_env_local.append(f'INFLUXDB_HOST={INFLUXDB_HOST}\n'); seen.add('INFLUXDB_HOST')
             elif line.startswith('INFLUXDB_TOKEN='):
                 new_env_local.append(f'INFLUXDB_TOKEN={INFLUXDB_TOKEN}\n'); seen.add('INFLUXDB_TOKEN')
+            elif line.startswith('USE_NEO4J='):
+                new_env_local.append(f'USE_NEO4J={USE_NEO4J}\n'); seen.add('USE_NEO4J')
             else:
                 new_env_local.append(line)
         # Garante que chaves existam
@@ -648,6 +652,8 @@ def run_topo(num_sims=5):
             new_env_local.append(f'INFLUXDB_HOST={INFLUXDB_HOST}\n')
         if 'INFLUXDB_TOKEN' not in seen:
             new_env_local.append(f'INFLUXDB_TOKEN={INFLUXDB_TOKEN}\n')
+        if 'USE_NEO4J' not in seen:
+            new_env_local.append(f'USE_NEO4J={USE_NEO4J}\n')
         # Atualiza/gera DATABASE_URL coerente
         has_database_url = any(l.startswith('DATABASE_URL=') for l in new_env_local)
         db_url = f'DATABASE_URL=postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}\n'
@@ -933,27 +939,37 @@ def run_topo(num_sims=5):
                 info(f"[sim][INFO] Found reset marker {reset_marker} -> simulator will force restore on startup\n")
         except Exception:
             pass
+        # If project-level entrypoint exists, mount it and ensure container runs it
+        host_generic_entry = os.path.join(sim_project_root, 'entrypoint.sh')
+        entrypoint_arg = None
+        # Only mount the generic entrypoint if there's no per-simulator custom entrypoint
+        if os.path.exists(host_generic_entry) and not os.path.exists(host_sim_entry):
+            # mount the generic entrypoint into the container so it will be executed
+            vols.insert(0, f"{host_generic_entry}:/entrypoint.sh")
+            entrypoint_arg = '/entrypoint.sh'
+
         if i == 1 and os.path.exists(host_sim_entry):
+            # special-case: sim_001 has a custom host entrypoint (runserver 8001)
             vols.insert(0, f"{host_sim_entry}:/entrypoint.sh")
             env['ALLOWED_HOSTS'] = '*'
             sim = safe_add_with_status(
                 name,
                 dimage=os.getenv('SIM_IMAGE','iot_simulator:latest'),
-                dcmd="/bin/bash",
                 environment=env,
                 volumes=vols,
                 ports=[8001],
                 port_bindings={8001:8001},
-                privileged=True
+                privileged=True,
+                **({'entrypoint': entrypoint_arg} if entrypoint_arg else {})
             )
         else:
             sim = safe_add_with_status(
                 name,
                 dimage=os.getenv('SIM_IMAGE','iot_simulator:latest'),
-                dcmd="/bin/bash",
                 environment=env,
                 volumes=vols,
-                privileged=True
+                privileged=True,
+                **({'entrypoint': entrypoint_arg} if entrypoint_arg else {})
             )
         if sim:
             simuladores.append(sim)
