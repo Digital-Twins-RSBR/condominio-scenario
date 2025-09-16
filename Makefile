@@ -110,6 +110,29 @@ prune-vol-simulators:
 prune-vol-all: prune-vol-influx prune-vol-neo4j prune-vol-middts prune-vol-tb prune-vol-simulators
 	@echo "[🗑️] Pruning concluído para todos os serviços conhecidos"
 
+# === LOG ROTATION HELPERS ===
+.PHONY: install-logrotate run-logrotate truncate-logs
+
+install-logrotate:
+	@echo "[install-logrotate] Instalando configuração de logrotate para deploy/logs (requer sudo)"
+	@if [ ! -f deploy/logs/logrotate/condominio-scenario ]; then echo "[ERRO] deploy/logs/logrotate/condominio-scenario não encontrado"; exit 1; fi
+	-sudo cp deploy/logs/logrotate/condominio-scenario /etc/logrotate.d/condominio-scenario || (echo "[WARN] falha ao copiar; verifique permissões"; exit 1)
+	@echo "[install-logrotate] Configuração instalada em /etc/logrotate.d/condominio-scenario"
+
+run-logrotate:
+	@echo "[run-logrotate] Forçando execução imediata do logrotate (requer sudo)"
+	@if [ ! -f /etc/logrotate.d/condominio-scenario ]; then echo "[WARN] /etc/logrotate.d/condominio-scenario não encontrado. Rode 'make install-logrotate' primeiro"; fi
+	-sudo logrotate -f /etc/logrotate.d/condominio-scenario || (echo "[WARN] logrotate retornou erro (verifique /var/log/messages ou syslog)")
+	@echo "[run-logrotate] Execução concluída (ou falhou com aviso)."
+
+truncate-logs:
+	@echo "[truncate-logs] Truncando logs grandes em deploy/logs para liberar espaço imediato (requer sudo)"
+	@for f in deploy/logs/*.log; do \
+		echo "[truncate] truncating $$f to 0 bytes"; \
+		sudo truncate -s 0 "$$f" || echo "[WARN] failed to truncate $$f"; \
+	done
+	@echo "[truncate-logs] Truncation attempted on matching logs."
+
 # === BUILD DE IMAGENS ===
 .PHONY: build-images rebuild-images
 
@@ -390,6 +413,64 @@ exec-sim:
 	@if [ -z "$(SIM)" ] || [ -z "$(CMD)" ]; then echo "[USO] make exec-sim SIM=mn.sim_001 CMD='bash'"; exit 1; fi
 	@echo "[🔧] Executando em $(SIM): $(CMD)"
 	-docker exec -it $(SIM) sh -c "$(CMD)"
+
+# === Process management helpers (simulators & middts) ===
+
+.PHONY: sims_status sims_call sims_stop sims_kill middts_status middts_call middts_stop middts_kill
+
+# -- Simulator helpers (operate on mn.sim_* by default, or specify SIM=mn.sim_001)
+sims_status:
+	@echo "[sims_status] Listing manage.py-related processes in simulators"
+	@for c in $$(docker ps --format '{{.Names}}' | grep '^mn.sim_' || true); do \
+		echo "== $$c =="; \
+		docker exec $$c sh -c "ps -eo pid,cmd | grep -E 'manage.py|send_telemetry|runserver' | grep -v grep || echo '  <no manage.py processes>'" || true; \
+	done
+
+sims_call:
+	@if [ -z "$(ARGS)" ]; then echo "[USO] make sims_call ARGS='--randomize --memory' [SIM=mn.sim_001]"; exit 1; fi
+	@for c in $$(if [ -n "$(SIM)" ]; then echo $(SIM); else docker ps --format '{{.Names}}' | grep '^mn.sim_' || true; fi); do \
+		echo "[sims_call] Starting send_telemetry in $$c with args: $(ARGS)"; \
+		docker exec $$c sh -c "cd /iot_simulator && nohup python manage.py send_telemetry $(ARGS) > /iot_simulator/send_telemetry.out 2>&1 & echo \$$! >/tmp/send_telemetry.pid" || echo "[WARN] failed to exec in $$c"; \
+	done
+
+sims_stop:
+	@for c in $$(if [ -n "$(SIM)" ]; then echo $(SIM); else docker ps --format '{{.Names}}' | grep '^mn.sim_' || true; fi); do \
+		echo "[sims_stop] Stopping send_telemetry in $$c"; \
+		docker exec $$c sh -c "pkill -f 'manage.py send_telemetry' || true; rm -f /tmp/send_telemetry.pid || true" || true; \
+	done
+
+sims_kill:
+	@for c in $$(if [ -n "$(SIM)" ]; then echo $(SIM); else docker ps --format '{{.Names}}' | grep '^mn.sim_' || true; fi); do \
+		echo "[sims_kill] Killing send_telemetry in $$c"; \
+		docker exec $$c sh -c "pkill -9 -f 'manage.py send_telemetry' || true; rm -f /tmp/send_telemetry.pid || true" || true; \
+	done
+
+# -- MiddTS helpers (operate on mn.middts by default)
+middts_status:
+	@echo "[middts_status] Listing processes related to middts (gunicorn/manage.py)"
+	@for c in $$(if [ -n "$(SIM)" ]; then echo $(SIM); else echo mn.middts; fi); do \
+		echo "== $$c =="; \
+		docker exec $$c sh -c "ps -eo pid,cmd | grep -E 'gunicorn|manage.py|runserver|middts' | grep -v grep || echo '  <no middts processes>'" || true; \
+	done
+
+middts_call:
+	@if [ -z "$(ARGS)" ]; then echo "[USO] make middts_call ARGS='--some-args' [SIM=mn.middts]"; exit 1; fi
+	@for c in $$(if [ -n "$(SIM)" ]; then echo $(SIM); else echo mn.middts; fi); do \
+		echo "[middts_call] Running command in $$c: python manage.py $(ARGS)"; \
+		docker exec $$c sh -c "cd /middleware-dt && nohup python manage.py $(ARGS) > /middleware-dt/call.out 2>&1 & echo \$$! >/tmp/middts_call.pid" || echo "[WARN] failed to exec in $$c"; \
+	done
+
+middts_stop:
+	@for c in $$(if [ -n "$(SIM)" ]; then echo $(SIM); else echo mn.middts; fi); do \
+		echo "[middts_stop] Stopping manage.py-related processes in $$c"; \
+		docker exec $$c sh -c "pkill -f 'manage.py' || true; rm -f /tmp/middts_call.pid || true" || true; \
+	done
+
+middts_kill:
+	@for c in $$(if [ -n "$(SIM)" ]; then echo $(SIM); else echo mn.middts; fi); do \
+		echo "[middts_kill] Killing manage.py-related processes in $$c"; \
+		docker exec $$c sh -c "pkill -9 -f 'manage.py' || true; rm -f /tmp/middts_call.pid || true" || true; \
+	done
 
 # Recreate a single container by removing it; does not attempt to recreate automatically.
 # Usage: make recreate-container SERVICE=tb

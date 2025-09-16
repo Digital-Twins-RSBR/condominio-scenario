@@ -178,6 +178,8 @@ def run_topo(num_sims=5):
     host_logs = {
         'tb': os.path.join(deploy_logs_dir, 'tb_start.log'),
         'middts': os.path.join(deploy_logs_dir, 'middts_start.log'),
+        # listener log for middts (listen_gateway)
+        'middts_listen_gateway': os.path.join(deploy_logs_dir, 'middts_listen_gateway.log'),
         'db': os.path.join(deploy_logs_dir, 'db_start.log'),
         'influxdb': os.path.join(deploy_logs_dir, 'influx_start.log'),
         'neo4j': os.path.join(deploy_logs_dir, 'neo4j_start.log'),
@@ -237,7 +239,38 @@ def run_topo(num_sims=5):
     POSTGRES_HOST = '10.10.2.10'
     POSTGRES_PORT = '5432'
     POSTGRES_USER = 'postgres'
+    # Default to previous behavior ('tb') to avoid mismatches with existing DB volumes
+    # Operators can override via repository .env (POSTGRES_PASSWORD=...)
     POSTGRES_PASSWORD = 'tb'
+    try:
+        # Prefer explicit repo .env value when present (operator-provided credential)
+        if os.path.exists(repo_env):
+            with open(repo_env, 'r') as ef:
+                for line in ef:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    if line.startswith('POSTGRES_PASSWORD='):
+                        POSTGRES_PASSWORD = line.split('=', 1)[1]
+                        try:
+                            info(f"[topo][INFO] Using POSTGRES_PASSWORD from repository .env (masked)")
+                        except Exception:
+                            pass
+                        break
+    except Exception:
+        pass
+    try:
+        if os.path.exists(repo_env):
+            with open(repo_env, 'r') as ef:
+                for line in ef:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    if line.startswith('POSTGRES_PASSWORD='):
+                        POSTGRES_PASSWORD = line.split('=', 1)[1]
+                        break
+    except Exception:
+        pass
     # Serviços centrais
     pg = safe_add_with_status('db',
         dimage='postgres:13-tools',
@@ -313,19 +346,17 @@ def run_topo(num_sims=5):
     # service startup logs are preserved even if the container writes to
     # stdout/stderr instead of the mapped file paths.
     LOG_FOLLOW_PROCS = []
+    LOG_FOLLOW_NAMES = set()
     def follow_container_logs(name, host_path):
         """Follow docker logs for container 'mn.<name>' and append them to host_path."""
         try:
             if not host_path:
                 return
             os.makedirs(os.path.dirname(host_path), exist_ok=True)
-            # open in append-binary so we capture raw output and allow concurrent writes
-            f = open(host_path, 'ab')
             # prefer Containernet-managed container name mn.<name>; if not present,
-            # fall back to a plain container name (useful for externally-run parser)
+            # try a plain container name (useful for externally-run parser)
             docker_name = f"mn.{name}"
             try:
-                # check whether mn.<name> exists and is running
                 pchk = subprocess.run(['docker', 'ps', '-q', '--filter', f'name=^{docker_name}$'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
                 if not pchk.stdout or not pchk.stdout.strip():
                     # try plain name
@@ -336,11 +367,48 @@ def run_topo(num_sims=5):
             except Exception:
                 # ignore detection errors and keep docker_name as mn.<name>
                 pass
-            # Use docker logs -f to follow; keep process attached to this python runtime
-            p = subprocess.Popen(['docker', 'logs', '-f', docker_name], stdout=f, stderr=subprocess.STDOUT)
-            LOG_FOLLOW_PROCS.append((p, f))
-            if QUIET:
-                print(f"[LOG] following logs for {docker_name} -> {host_path}")
+
+            # If container exists right now, stream its logs into the host file.
+            # Avoid starting duplicate followers for the same logical name
+            if name in LOG_FOLLOW_NAMES:
+                if QUIET:
+                    print(f"[LOG] follower for {name} already running; skipping duplicate")
+                return
+            try:
+                pchk_final = subprocess.run(['docker', 'ps', '-q', '--filter', f'name=^{docker_name}$'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                if pchk_final.stdout and pchk_final.stdout.strip():
+                    # container exists: use docker logs -f and redirect to the host file via shell
+                    cmd = f"sh -c \"docker logs -f {docker_name} >> '{host_path}' 2>&1\""
+                    p = subprocess.Popen(cmd, shell=True)
+                    LOG_FOLLOW_PROCS.append((name, p, None))
+                    LOG_FOLLOW_NAMES.add(name)
+                    if QUIET:
+                        print(f"[LOG] following docker logs for {docker_name} -> {host_path}")
+                    return
+            except Exception:
+                # if docker check fails, fall through to watcher behavior
+                pass
+
+            # Container not present yet: start a lightweight watcher that will
+            # wait for the container to appear and then stream its logs into the file.
+            # This avoids using `tail -F` on the same file (which would append what it
+            # reads back into the same file, causing runaway growth).
+            # Build a safe shell command: outer Python string uses double-quotes,
+            # the shell script passed to sh -c is single-quoted; host_path is
+            # wrapped in double-quotes inside the shell to tolerate spaces.
+            watcher_cmd = (
+                "sh -c 'while true; do "
+                f"if docker ps -q --filter name=^{docker_name}$ | grep -q .; then "
+                f"docker logs -f {docker_name} >> \"{host_path}\" 2>&1; fi; sleep 2; done'"
+            )
+            try:
+                p = subprocess.Popen(watcher_cmd, shell=True)
+                LOG_FOLLOW_PROCS.append((name, p, None))
+                LOG_FOLLOW_NAMES.add(name)
+                if QUIET:
+                    print(f"[LOG] waiting for {docker_name} -> will follow logs to {host_path} when container appears")
+            except Exception as e:
+                info(f"[logs][WARN] failed to start watcher for {name}: {e}\n")
         except Exception as e:
             info(f"[logs][WARN] falha ao seguir logs de {name}: {e}\n")
 
@@ -483,9 +551,26 @@ def run_topo(num_sims=5):
 
     # Start followers for the three services of interest if their host paths exist
     try:
+        # Core services
         follow_container_logs('influxdb', host_logs.get('influxdb'))
         follow_container_logs('neo4j', host_logs.get('neo4j'))
         follow_container_logs('parser', host_logs.get('parser'))
+        follow_container_logs('db', host_logs.get('db'))
+        follow_container_logs('tb', host_logs.get('tb'))
+        # middts: follow both the container logs and the listen_gateway log if present
+        follow_container_logs('middts', host_logs.get('middts'))
+        # Also attempt to follow the listen_gateway log file inside the middts host mount
+        lg = os.path.join(os.path.dirname(__file__), '../../deploy/logs/middts_listen_gateway.log')
+        try:
+            # Ensure the file exists
+            open(lg, 'a').close()
+            subprocess.run(f"chmod 666 '{lg}'", shell=True, check=False)
+            follow_container_logs('middts-listener', lg)
+        except Exception:
+            pass
+        # simulators
+        for i in range(1, num_sims + 1):
+            follow_container_logs(f'sim_{i:03d}', host_logs.get(f'sim_{i:03d}'))
     except Exception:
         # Non-fatal: best-effort
         pass
@@ -517,6 +602,17 @@ def run_topo(num_sims=5):
                 info('[neo4j][INFO] detected existing neo4j_data volume -> bootstrap env vars (NEO4J_AUTH) will be ignored by Neo4j\n')
             else:
                 info('[neo4j][INFO] neo4j_data appears empty -> initial bootstrap env vars will be applied by Neo4j on first start\n')
+        except Exception:
+            pass
+        # Check postgres data volume as well: if pre-existing, postgres will ignore
+        # POSTGRES_PASSWORD from env (bootstrap only applies on first init). Warn operator.
+        try:
+            db_init_present = docker_volume_is_nonempty('db_data')
+            if db_init_present:
+                info('[db][WARN] detected existing db_data volume -> Postgres bootstrap env vars (including POSTGRES_PASSWORD) will be ignored (existing DB retained)\n')
+                info('[db][WARN] If you expect a fresh DB, remove the docker volume `db_data` or use the repository .env to match the existing password.\n')
+            else:
+                info('[db][INFO] db_data appears empty -> Postgres will apply provided POSTGRES_* env vars on first start\n')
         except Exception:
             pass
     except Exception:
@@ -713,6 +809,7 @@ def run_topo(num_sims=5):
     host_logs = {
         'tb': os.path.join(deploy_logs_dir, 'tb_start.log'),
         'middts': os.path.join(deploy_logs_dir, 'middts_start.log'),
+        'middts_listen_gateway': os.path.join(deploy_logs_dir, 'middts_listen_gateway.log'),
         'db': os.path.join(deploy_logs_dir, 'db_start.log'),
         'influxdb': os.path.join(deploy_logs_dir, 'influx_start.log'),
         'neo4j': os.path.join(deploy_logs_dir, 'neo4j_start.log'),
@@ -808,6 +905,8 @@ def run_topo(num_sims=5):
             # mount host entrypoint to override image entrypoint if present
             f'{host_entrypoint}:/entrypoint.sh',
             f"{host_logs.get('middts')}:/var/log/middts_start.log",
+            # mount the listen_gateway log (inside container at /middleware-dt/logs/listen_gateway.log)
+            f"{host_logs.get('middts_listen_gateway')}:/middleware-dt/logs/listen_gateway.log",
         ],
         privileged=True
     )
