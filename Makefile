@@ -220,7 +220,21 @@ topo:
 	@echo "[📡] Executando topologia com Containernet"
 	# Use the helper script to centralize environment handling and defaults.
 	# Default behavior preserves state (PRESERVE_STATE=1) unless overridden by caller.
-	@sh scripts/run_topo.sh
+	# Pass PROFILE (if provided) into the topology runner as TOPO_PROFILE env var
+	@echo "[topo] PROFILE=$(PROFILE)"
+	@sh scripts/run_topo.sh $(PROFILE)
+
+.PHONY: urllc best_effort eMBB
+
+# Convenience targets: run topo with a predefined profile
+urllc:
+	@$(MAKE) topo PROFILE=urllc
+
+best_effort:
+	@$(MAKE) topo PROFILE=best_effort
+
+eMBB:
+	@$(MAKE) topo PROFILE=eMBB
 
 topo-screen:
 	@echo "[📡] Executando topologia com Containernet em screen"

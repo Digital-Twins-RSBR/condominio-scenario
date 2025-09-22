@@ -129,6 +129,37 @@ def run_topo(num_sims=5):
     net = Containernet(controller=Controller)
     net.addController('c0')
 
+    # Helper: link profile defaults (bandwidth Mbps, delay ms, loss %)
+    # Profiles: urllc (low latency, lower bw), best_effort (balanced), eMBB (high bandwidth)
+    PROFILE_LINK_PRESETS = {
+        'urllc': {'bw': 1000, 'delay': '0.2ms', 'loss': 0},
+        'eMBB': {'bw': 500, 'delay': '10ms', 'loss': 0.1},
+        'best_effort': {'bw': 200, 'delay': '50ms', 'loss': 0.5}
+    }
+
+    # Determine profile from env TOPO_PROFILE or default to 'best_effort'
+    topo_profile = os.environ.get('TOPO_PROFILE') or os.environ.get('PROFILE') or 'best_effort'
+    topo_profile = topo_profile if topo_profile in PROFILE_LINK_PRESETS else topo_profile.lower()
+    if topo_profile not in PROFILE_LINK_PRESETS:
+        # try common case-insensitive names
+        for k in PROFILE_LINK_PRESETS:
+            if k.lower() == str(topo_profile).lower():
+                topo_profile = k
+                break
+    profile_params = PROFILE_LINK_PRESETS.get(topo_profile, PROFILE_LINK_PRESETS['best_effort'])
+
+    def add_link(a, b, **kwargs):
+        """Wrapper around net.addLink that applies TCLink with profile defaults unless overridden."""
+        link_kwargs = dict(bw=profile_params['bw'], delay=profile_params['delay'], loss=profile_params['loss'])
+        # allow caller overrides
+        link_kwargs.update(kwargs)
+        try:
+            # Use TCLink to set bandwidth/delay/loss
+            return net.addLink(a, b, cls=TCLink, **link_kwargs)
+        except TypeError:
+            # fallback: older Mininet might accept the args without cls
+            return net.addLink(a, b, **link_kwargs)
+
     def safe_add(name, **kwargs):
         try:
             # If a container with this name already exists, remove only the
@@ -1091,32 +1122,32 @@ def run_topo(num_sims=5):
         # non-fatal: continue and let net.addLink attempts proceed
         pass
 
-    net.addLink(tb, s1)
-    net.addLink(middts, s2)
-    net.addLink(s1, s2)
+    add_link(tb, s1)
+    add_link(middts, s2)
+    add_link(s1, s2)
     for sim, s_sim in zip(simuladores, sim_switches):
-        net.addLink(sim, s_sim)
+        add_link(sim, s_sim)
         # Conecta o switch do simulador ao switch principal s1 para alcançar ThingsBoard
         try:
-            net.addLink(s_sim, s1)
+            add_link(s_sim, s1)
         except Exception:
             # ignore se já existir
             pass
-        net.addLink(s_sim, tb)
-        net.addLink(s_sim, influxdb)
+        add_link(s_sim, tb)
+        add_link(s_sim, influxdb)
 
     # Serviços centrais ligados a todos os switches necessários
     # Postgres: todos precisam menos os simuladores que usam sqlite3
-    net.addLink(pg, s1)
-    net.addLink(pg, s2)
+    add_link(pg, s1)
+    add_link(pg, s2)
     # Influx: middts e simuladores
     # Ensure switch s1 (ThingsBoard) can also reach InfluxDB
-    net.addLink(influxdb, s1)
-    net.addLink(influxdb, s2)
+    add_link(influxdb, s1)
+    add_link(influxdb, s2)
     for s_sim in sim_switches:
-        net.addLink(influxdb, s_sim)
+        add_link(influxdb, s_sim)
     # Neo4j e parser: só middts
-    net.addLink(neo4j, s2)
+    add_link(neo4j, s2)
 
     # === IPs e rotas ===
     info("[net] Configurando IPs e rotas\n")
@@ -1847,10 +1878,14 @@ if __name__ == '__main__':
     group.add_argument('--quiet', action='store_true', help='Run with minimal, concise output (default)')
     group.add_argument('--verbose', action='store_true', help='Run with verbose debug output')
     parser.add_argument('--sims', type=int, default=1, help='Number of simulator nodes to create')
+    parser.add_argument('--profile', type=str, default=None, help='Link profile to use: urllc | best_effort | eMBB')
     args = parser.parse_args()
     # Configure module-level flags
     QUIET = args.quiet or not args.verbose
     VERBOSE = args.verbose
+    # Propagate profile into environment so run_topo() can pick it up early
+    if args.profile:
+        os.environ['TOPO_PROFILE'] = args.profile
     # If verbose, restore info to original by setting mininet log level higher
     if VERBOSE:
         # restore info printing by setting loglevel and not overriding
