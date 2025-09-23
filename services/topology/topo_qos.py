@@ -150,6 +150,15 @@ def run_topo(num_sims=5):
 
     def add_link(a, b, **kwargs):
         """Wrapper around net.addLink that applies TCLink with profile defaults unless overridden."""
+        # Special-case: if caller requests no_profile, create an unshaped link
+        no_profile = kwargs.pop('no_profile', False)
+        if no_profile:
+            try:
+                return net.addLink(a, b)
+            except Exception:
+                # fallback to explicit addLink even if it errors
+                return net.addLink(a, b)
+
         link_kwargs = dict(bw=profile_params['bw'], delay=profile_params['delay'], loss=profile_params['loss'])
         # allow caller overrides
         link_kwargs.update(kwargs)
@@ -1133,19 +1142,22 @@ def run_topo(num_sims=5):
         except Exception:
             # ignore se já existir
             pass
-        add_link(s_sim, tb)
-        add_link(s_sim, influxdb)
+    add_link(s_sim, tb)
+    # Simulators should reach Influx without profile shaping
+    add_link(s_sim, influxdb, no_profile=True)
 
     # Serviços centrais ligados a todos os switches necessários
     # Postgres: todos precisam menos os simuladores que usam sqlite3
-    add_link(pg, s1)
-    add_link(pg, s2)
+    # Ensure ThingsBoard<->PG and middts<->PG links are local (no shaping)
+    add_link(pg, s1, no_profile=True)
+    add_link(pg, s2, no_profile=True)
     # Influx: middts e simuladores
     # Ensure switch s1 (ThingsBoard) can also reach InfluxDB
-    add_link(influxdb, s1)
-    add_link(influxdb, s2)
+    # Ensure Influx <-> middts and Influx <-> simulators are local (no shaping)
+    add_link(influxdb, s1, no_profile=True)
+    add_link(influxdb, s2, no_profile=True)
     for s_sim in sim_switches:
-        add_link(influxdb, s_sim)
+        add_link(influxdb, s_sim, no_profile=True)
     # Neo4j e parser: só middts
     add_link(neo4j, s2)
 

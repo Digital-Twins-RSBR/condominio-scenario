@@ -222,7 +222,21 @@ topo:
 	# Default behavior preserves state (PRESERVE_STATE=1) unless overridden by caller.
 	# Pass PROFILE (if provided) into the topology runner as TOPO_PROFILE env var
 	@echo "[topo] PROFILE=$(PROFILE)"
-	@sh scripts/run_topo.sh $(PROFILE)
+	@# Default PROFILE to 'urllc' when not provided. If the operator passed
+	@# PROFILE on the make command line (e.g. `make topo PROFILE=eMBB`), do not
+	@# let a repository `.env` file override that value. Source .env only when
+	@# PROFILE is empty.
+	# If the make variable PROFILE was passed on the command line, expand it
+	# into the shell so the recipe sees it. Otherwise try sourcing .env and
+	# fallback to the hardcoded default 'urllc'.
+	@if [ -n "$(PROFILE)" ]; then \
+		profile="$(PROFILE)"; \
+	else \
+		if [ -f $(CURDIR)/.env ]; then . $(CURDIR)/.env; fi; \
+		profile="${PROFILE:-urllc}"; \
+	fi; \
+	echo "[topo] PROFILE=$$profile"; \
+	sh scripts/run_topo.sh "$$profile"
 
 .PHONY: urllc best_effort eMBB
 
@@ -235,6 +249,20 @@ best_effort:
 
 eMBB:
 	@$(MAKE) topo PROFILE=eMBB
+
+.PHONY: cenario_test
+
+# Usage:
+#  make cenario_test PROFILE=urllc DURATION=1800
+#  PROFILE defaults to best_effort, DURATION defaults to 1800 (30m)
+cenario_test:
+	@echo "[make] running scenario test (PROFILE=${PROFILE}, DURATION=${DURATION})"
+	@if [ -f .env ]; then . .env; fi; \
+	profile="${PROFILE:-best_effort}"; \
+	duration="${DURATION:-1800}"; \
+	script="./scripts/cenario_test.sh"; \
+	if [ ! -x "$$script" ]; then chmod +x "$$script"; fi; \
+	"$$script" "$$profile" "$$duration"
 
 topo-screen:
 	@echo "[📡] Executando topologia com Containernet em screen"
@@ -415,19 +443,6 @@ topo-check:
 	@chmod +x scripts/check_topology.sh || true
 	@./scripts/check_topology.sh
 
-# === HELPERS PARA EXECUTAR COMANDOS DENTRO DE CONTAINERS ===
-.PHONY: exec-middts exec-sim
-
-exec-middts:
-	@if [ -z "$(CMD)" ]; then echo "[USO] make exec-middts CMD='bash'"; exit 1; fi
-	@echo "[🔧] Executando em mn.middts: $(CMD)"
-	-docker exec -it mn.middts sh -c "$(CMD)"
-
-exec-sim:
-	@if [ -z "$(SIM)" ] || [ -z "$(CMD)" ]; then echo "[USO] make exec-sim SIM=mn.sim_001 CMD='bash'"; exit 1; fi
-	@echo "[🔧] Executando em $(SIM): $(CMD)"
-	-docker exec -it $(SIM) sh -c "$(CMD)"
-
 # === Process management helpers (simulators & middts) ===
 
 .PHONY: sims_status sims_call sims_stop sims_kill middts_status middts_call middts_stop middts_kill
@@ -468,10 +483,13 @@ middts_status:
 	done
 
 middts_call:
-	@if [ -z "$(ARGS)" ]; then echo "[USO] make middts_call ARGS='--some-args' [SIM=mn.middts]"; exit 1; fi
-	@for c in $$(if [ -n "$(SIM)" ]; then echo $(SIM); else echo mn.middts; fi); do \
-		echo "[middts_call] Running command in $$c: python manage.py $(ARGS)"; \
-		docker exec $$c sh -c "cd /middleware-dt && nohup python manage.py $(ARGS) > /middleware-dt/call.out 2>&1 & echo \$$! >/tmp/middts_call.pid" || echo "[WARN] failed to exec in $$c"; \
+	@# Allow ARGS to be provided as environment or as extra goal: `make middts_call update_causal_property`
+	@ARGS_FROM_GOALS := $(filter-out $@,$(MAKECMDGOALS))
+	@ARGS_SHELL="$(if $(ARGS),$(ARGS),$(ARGS_FROM_GOALS))"; \
+	if [ -z "$$ARGS_SHELL" ]; then echo "[USO] make middts_call ARGS='--some-args' [SIM=mn.middts]"; exit 1; fi; \
+	for c in $$(if [ -n "$(SIM)" ]; then echo $(SIM); else echo mn.middts; fi); do \
+		echo "[middts_call] Running command in $$c: python manage.py $$ARGS_SHELL"; \
+		docker exec $$c sh -c "cd /middleware-dt && nohup python manage.py $$ARGS_SHELL > /middleware-dt/call.out 2>&1 & echo \$$! >/tmp/middts_call.pid" || echo "[WARN] failed to exec in $$c"; \
 	done
 
 middts_stop:
