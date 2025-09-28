@@ -507,6 +507,34 @@ INFLUX_HOST="${INFLUXDB_HOST:-${INFLUX_HOST:-localhost}}"
 INFLUX_PORT="${INFLUXDB_PORT:-${INFLUX_PORT:-8086}}"
 BASE_INFLUX_URL="http://${INFLUX_HOST}:${INFLUX_PORT}"
 
+# Determine how to invoke curl against the Influx API: try local first, else use a curl container
+choose_influx_curl() {
+  # prefer host-local curl if it can reach the Influx /health endpoint
+  if command -v curl >/dev/null 2>&1 && curl -sS --max-time 3 "${BASE_INFLUX_URL}/health" >/dev/null 2>&1; then
+    CURL_CMD_LOCAL="curl --silent --show-error --fail"
+    CURL_CMD="${CURL_CMD_LOCAL}"
+    log "Using host curl to contact Influx at ${BASE_INFLUX_URL}"
+    return 0
+  fi
+
+  # fallback: if mn.influxdb container exists, run curl inside a transient container that shares its network
+  if docker ps --format '{{.Names}}' | grep -q '^mn.influxdb$$'; then
+    CURL_CMD="docker run --rm --network container:mn.influxdb curlimages/curl:8.3.0 -sS"
+    # test via docker-run curl
+    if $CURL_CMD --max-time 5 "${BASE_INFLUX_URL}/health" >/dev/null 2>&1; then
+      log "Using docker-run curl (network container:mn.influxdb) to contact Influx"
+      return 0
+    fi
+  fi
+
+  # final fallback: host curl (may fail)
+  CURL_CMD="curl --silent --show-error --fail"
+  log "Warning: could not reach Influx via host or docker-run; will attempt host curl which may fail"
+  return 1
+}
+
+choose_influx_curl
+
 if [ -z "$INFLUX_TOKEN" ]; then
   log "INFLUX_TOKEN not set. Cannot export Influx CSV. Skipping export."
 else
@@ -516,9 +544,9 @@ else
   log "Attempting to create Influx bucket: $SCENARIO_BUCKET"
   # Create bucket via API (best-effort). Requires INFLUX_ORG and admin token
   # Get org ID
-  ORG_ID="$(curl --silent --show-error --fail -G "${BASE_INFLUX_URL}/api/v2/orgs?org=${INFLUX_ORG}" --header "Authorization: Token ${INFLUX_TOKEN}" | sed -n 's/.*"id":"\([a-f0-9-]*\)".*/\1/p' || true)"
+  ORG_ID="$($CURL_CMD -G "${BASE_INFLUX_URL}/api/v2/orgs?org=${INFLUX_ORG}" --header "Authorization: Token ${INFLUX_TOKEN}" 2>/dev/null | sed -n 's/.*"id":"\([a-f0-9-]*\)".*/\1/p' || true)"
   if [ -n "$ORG_ID" ]; then
-    curl --silent --show-error --fail -X POST "${BASE_INFLUX_URL}/api/v2/buckets" \
+    $CURL_CMD -X POST "${BASE_INFLUX_URL}/api/v2/buckets" \
       --header "Authorization: Token ${INFLUX_TOKEN}" \
       --header 'Content-type: application/json' \
       --data "{\"orgID\": \"${ORG_ID}\", \"name\": \"${SCENARIO_BUCKET}\", \"retentionRules\": [] }" \
@@ -530,14 +558,14 @@ else
   # Try a server-side copy using Flux to() (copy the test time window)
   RANGE_FLUX="from(bucket: \"${BUCKET}\") |> range(start: time(v: \"${START_ISO}\"), stop: time(v: \"${STOP_ISO}\")) |> to(bucket: \"${SCENARIO_BUCKET}\")"
   log "Attempting server-side copy of test window into ${SCENARIO_BUCKET}"
-  if curl --silent --show-error --fail --request POST "${BASE_INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}" \
-      --header "Authorization: Token ${INFLUX_TOKEN}" \
-      --header 'Content-type: application/vnd.flux' \
-      --data "$RANGE_FLUX" > /dev/null 2>&1; then
+  if $CURL_CMD --request POST "${BASE_INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}" \
+    --header "Authorization: Token ${INFLUX_TOKEN}" \
+    --header 'Content-type: application/vnd.flux' \
+    --data "$RANGE_FLUX" > /dev/null 2>&1; then
     log "Server-side copy initiated to ${SCENARIO_BUCKET}"
     # Export the new bucket to CSV
     OUTFILE="${RESULTS_DIR}/${SCENARIO_BUCKET}.csv"
-    curl --silent --show-error --fail --request POST "${BASE_INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}" \
+    $CURL_CMD --request POST "${BASE_INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}" \
       --header "Authorization: Token ${INFLUX_TOKEN}" \
       --header 'Accept: text/csv' \
       --header 'Content-type: application/vnd.flux' \
@@ -545,7 +573,7 @@ else
       && log "Export completed -> $OUTFILE" || log "Export failed"
   else
     log "Server-side copy failed; falling back to exporting full original bucket"
-    curl --silent --show-error --fail --request POST "${BASE_INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}" \
+    $CURL_CMD --request POST "${BASE_INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}" \
       --header "Authorization: Token ${INFLUX_TOKEN}" \
       --header 'Accept: text/csv' \
       --header 'Content-type: application/vnd.flux' \
