@@ -79,6 +79,10 @@ TOPO_SCREEN="topo"
 TOPO_MAKE_TARGET="topo"
 MAKE_CMD="make"
 
+# Create organized test directory structure
+TEST_TIMESTAMP=$(date -u +'%Y%m%dT%H%M%SZ')
+TEST_DIR="${RESULTS_DIR}/test_${TEST_TIMESTAMP}_${PROFILE}"
+
 # marker to remember last applied profile (to avoid re-applying)
 PROFILE_MARKER=".current_slice_profile"
 
@@ -89,6 +93,8 @@ if [ -f .env ]; then
 fi
 
 mkdir -p "$RESULTS_DIR"
+mkdir -p "$TEST_DIR"
+echo "[🗂️] Test results will be organized in: $TEST_DIR"
 
 log() { echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] $*"; }
 
@@ -408,6 +414,11 @@ MID_CNT="$(find_container 'middts\|middleware')"
 start_middts_update() {
   MID_CNT="$1"
   if [ -n "$MID_CNT" ]; then
+    # ALWAYS stop existing update_causal_property to avoid concurrent processes
+    log "Stopping any existing update_causal_property in $MID_CNT"
+    docker exec "$MID_CNT" bash -lc "pkill -f 'manage.py update_causal_property' || true; rm -f /tmp/update_causal_property.pid || true" 2>/dev/null || true
+    sleep 2  # Extra time for cleanup
+    
     log "Starting update_causal_property in container: $MID_CNT"
     # Source middts .env inside the container so INFLUX/NEO4J vars are available
     docker exec -d "$MID_CNT" bash -lc "if [ -f /middleware-dt/.env ]; then set -a; . /middleware-dt/.env; set +a; fi; cd /var/condominio-scenario/services/middleware-dt || true; nohup python3 manage.py update_causal_property > /middleware-dt/update_causal_property.out 2>&1 & echo \$! >/tmp/update_causal_property.pid" || log "Failed to exec update_causal_property (non-fatal)"
@@ -418,7 +429,7 @@ start_middts_update() {
     else
       log "Warning: update_causal_property does not appear to be running in $MID_CNT"
       # capture a short tail of the updater output if present for diagnosis
-      docker exec "$MID_CNT" bash -lc "if [ -f /middleware-dt/update_causal_property.out ]; then tail -n 200 /middleware-dt/update_causal_property.out; fi" > "${RESULTS_DIR}/${PROFILE}_middts_update_tail_$(date -u +'%Y%m%dT%H%M%SZ').log" 2>/dev/null || true
+      docker exec "$MID_CNT" bash -lc "if [ -f /middleware-dt/update_causal_property.out ]; then tail -n 200 /middleware-dt/update_causal_property.out; fi" > "${TEST_DIR}/${PROFILE}_middts_update_tail_${TEST_TIMESTAMP}.log" 2>/dev/null || true
     fi
   else
     log "middts container not found, skipping update_causal_property start."
@@ -430,25 +441,26 @@ start_middts_update() {
 start_simulators() {
   for s in $(docker ps --format '{{.Names}}' | grep -E 'sim[_-]?[0-9]+' || true); do
     [ -z "$s" ] && continue
-    # check if send_telemetry is running
-    if docker exec "$s" bash -lc "ps -eo cmd | grep -E 'manage.py send_telemetry' | grep -v grep >/dev/null 2>&1"; then
-      log "send_telemetry already running in $s"
-    else
-      log "Starting send_telemetry in $s"
-  # start with --randomize to vary sensor timestamps and avoid deterministic collisions
-  # Ensure .env exists inside the container (copy from .env.example if present)
-  docker exec "$s" bash -lc "if [ ! -f /iot_simulator/.env ] && [ -f /iot_simulator/.env.example ]; then echo '[auto] copying .env.example -> .env inside container'; cp /iot_simulator/.env.example /iot_simulator/.env; fi" >/dev/null 2>&1 || true
-  # Source the container's .env so THINGSBOARD_* and INFLUX_* are available to the process
-  docker exec -d "$s" bash -lc "if [ -f /iot_simulator/.env ]; then set -a; . /iot_simulator/.env; set +a; fi; cd /iot_simulator || true; nohup python3 manage.py send_telemetry --use-influxdb --randomize > /iot_simulator/send_telemetry.out 2>&1 & echo \$! >/tmp/send_telemetry.pid" || log "Failed to start send_telemetry in $s"
-        # warn if THINGSBOARD credentials missing inside the container env file
-        if ! docker exec "$s" bash -lc "[ -f /iot_simulator/.env ] && grep -q '^THINGSBOARD_USER=' /iot_simulator/.env >/dev/null 2>&1"; then
-          log "Warning: THINGSBOARD_USER not found in /iot_simulator/.env inside $s"
-        fi
-        if ! docker exec "$s" bash -lc "[ -f /iot_simulator/.env ] && grep -q '^THINGSBOARD_PASSWORD=' /iot_simulator/.env >/dev/null 2>&1"; then
-          log "Warning: THINGSBOARD_PASSWORD not found in /iot_simulator/.env inside $s"
-        fi
-      sleep 0.5
+    
+    # ALWAYS stop existing send_telemetry to avoid concurrent processes
+    log "Stopping any existing send_telemetry in $s"
+    docker exec "$s" bash -lc "pkill -f 'manage.py send_telemetry' || true; rm -f /tmp/send_telemetry.pid || true" 2>/dev/null || true
+    sleep 1
+    
+    log "Starting send_telemetry in $s"
+    # start with --randomize to vary sensor timestamps and avoid deterministic collisions
+    # Ensure .env exists inside the container (copy from .env.example if present)
+    docker exec "$s" bash -lc "if [ ! -f /iot_simulator/.env ] && [ -f /iot_simulator/.env.example ]; then echo '[auto] copying .env.example -> .env inside container'; cp /iot_simulator/.env.example /iot_simulator/.env; fi" >/dev/null 2>&1 || true
+    # Source the container's .env so THINGSBOARD_* and INFLUX_* are available to the process
+    docker exec -d "$s" bash -lc "if [ -f /iot_simulator/.env ]; then set -a; . /iot_simulator/.env; set +a; fi; cd /iot_simulator || true; nohup python3 manage.py send_telemetry --use-influxdb --randomize > /iot_simulator/send_telemetry.out 2>&1 & echo \$! >/tmp/send_telemetry.pid" || log "Failed to start send_telemetry in $s"
+    # warn if THINGSBOARD credentials missing inside the container env file
+    if ! docker exec "$s" bash -lc "[ -f /iot_simulator/.env ] && grep -q '^THINGSBOARD_USER=' /iot_simulator/.env >/dev/null 2>&1"; then
+      log "Warning: THINGSBOARD_USER not found in /iot_simulator/.env inside $s"
     fi
+    if ! docker exec "$s" bash -lc "[ -f /iot_simulator/.env ] && grep -q '^THINGSBOARD_PASSWORD=' /iot_simulator/.env >/dev/null 2>&1"; then
+      log "Warning: THINGSBOARD_PASSWORD not found in /iot_simulator/.env inside $s"
+    fi
+    sleep 0.5
   done
 }
 
@@ -496,9 +508,32 @@ if [ -n "${SCHED_PID:-}" ]; then
   kill "$SCHED_PID" 2>/dev/null || true
 fi
 
+# Clean up middleware HTTP sessions and connections to prevent accumulation
+if [ -n "$MID_CNT" ]; then
+  log "Cleaning up middleware URLLC singleton sessions"
+  # Use the new singleton session manager cleanup
+  docker exec "$MID_CNT" bash -lc "python3 -c \"
+import sys
+sys.path.append('/middleware-dt')
+try:
+    from facade.utils import close_all_sessions
+    close_all_sessions()
+    print('URLLC singleton sessions cleaned successfully')
+except Exception as e:
+    print(f'Session cleanup error: {e}')
+    # Fallback: force garbage collection
+    import gc
+    gc.collect()
+    print('Fallback garbage collection completed')
+\"" || true
+  
+  # Wait a moment for connections to close gracefully
+  sleep 2
+fi
+
 # export bucket to CSV
 BUCKET="${BUCKET:-${INFLUXDB_BUCKET:-${IOT_INFLUX_BUCKET:-iot_data}}}"
-OUTFILE="${RESULTS_DIR}/${PROFILE}_$(date -u +'%Y%m%dT%H%M%SZ').csv"
+OUTFILE="${TEST_DIR}/${PROFILE}_${TEST_TIMESTAMP}.csv"
 INFLUX_ORG="${INFLUXDB_ORG:-${INFLUX_ORG:-minha_org}}"
 INFLUX_TOKEN="${INFLUXDB_TOKEN:-${INFLUX_TOKEN:-}}"
 
@@ -539,6 +574,31 @@ if [ -z "$INFLUX_TOKEN" ]; then
   log "INFLUX_TOKEN not set. Cannot export Influx CSV. Skipping export."
 else
   log "Exporting bucket '$BUCKET' to $OUTFILE (this may take a while)..."
+  # Quick pre-check: ask Influx for a single point in the time window. If none, skip export to avoid creating empty CSVs.
+  TMP_CHECK_FILE="$(mktemp --tmpdir=/tmp influx_check_XXXX.csv)"
+  log "Checking for presence of points in bucket '${BUCKET}' for window ${START_ISO}..${STOP_ISO}"
+  # Limit to 1 row to make the check fast. Save output to temporary file and test size.
+  if $CURL_CMD --request POST "${BASE_INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}" \
+        --header "Authorization: Token ${INFLUX_TOKEN}" \
+        --header 'Accept: text/csv' \
+        --header 'Content-type: application/vnd.flux' \
+        --data "from(bucket: \"${BUCKET}\") |> range(start: time(v: \"${START_ISO}\"), stop: time(v: \"${STOP_ISO}\")) |> limit(n:1)" -o "$TMP_CHECK_FILE" 2>/dev/null; then
+    # If the response file is very small (only CRLF/header), treat as empty
+    if [ ! -s "$TMP_CHECK_FILE" ] || [ "$(wc -c < "$TMP_CHECK_FILE")" -le 2 ]; then
+      log "No points found in Influx for the requested window; skipping export and offline report generation. (checked ${TMP_CHECK_FILE})"
+      rm -f "$TMP_CHECK_FILE" || true
+      OUTFILE=""
+      # Skip the rest of the export logic by jumping to after the export block
+      SKIP_INFLUX_EXPORT=1
+    else
+      rm -f "$TMP_CHECK_FILE" || true
+      SKIP_INFLUX_EXPORT=0
+    fi
+  else
+    log "Warning: pre-export check against Influx failed (network or auth); continuing with export attempt"
+    rm -f "$TMP_CHECK_FILE" || true
+    SKIP_INFLUX_EXPORT=0
+  fi
   # Create a scenario-specific bucket (name: <bucket>_<profile>_<start>) and copy the range into it via a Flux to() call
   SCENARIO_BUCKET="${BUCKET}_${PROFILE}_$(date -u +'%Y%m%dT%H%M%SZ')"
   log "Attempting to create Influx bucket: $SCENARIO_BUCKET"
@@ -558,7 +618,9 @@ else
   # Try a server-side copy using Flux to() (copy the test time window)
   RANGE_FLUX="from(bucket: \"${BUCKET}\") |> range(start: time(v: \"${START_ISO}\"), stop: time(v: \"${STOP_ISO}\")) |> to(bucket: \"${SCENARIO_BUCKET}\")"
   log "Attempting server-side copy of test window into ${SCENARIO_BUCKET}"
-  if $CURL_CMD --request POST "${BASE_INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}" \
+  if [ "${SKIP_INFLUX_EXPORT:-0}" = "1" ]; then
+    log "Skipping server-side copy because pre-check decided there are no points in the time window"
+  elif $CURL_CMD --request POST "${BASE_INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}" \
     --header "Authorization: Token ${INFLUX_TOKEN}" \
     --header 'Content-type: application/vnd.flux' \
     --data "$RANGE_FLUX" > /dev/null 2>&1; then
@@ -573,12 +635,17 @@ else
       && log "Export completed -> $OUTFILE" || log "Export failed"
   else
     log "Server-side copy failed; falling back to exporting full original bucket"
-    $CURL_CMD --request POST "${BASE_INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}" \
-      --header "Authorization: Token ${INFLUX_TOKEN}" \
-      --header 'Accept: text/csv' \
-      --header 'Content-type: application/vnd.flux' \
-      --data "from(bucket: \"${BUCKET}\") |> range(start: time(v: \"${START_ISO}\"), stop: time(v: \"${STOP_ISO}\"))" -o "$OUTFILE" \
-      && log "Export completed -> $OUTFILE" || log "Export failed"
+    if [ "${SKIP_INFLUX_EXPORT:-0}" = "1" ]; then
+      log "Skipping fallback export because pre-check decided there are no points in the time window"
+      OUTFILE=""
+    else
+      $CURL_CMD --request POST "${BASE_INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}" \
+        --header "Authorization: Token ${INFLUX_TOKEN}" \
+        --header 'Accept: text/csv' \
+        --header 'Content-type: application/vnd.flux' \
+        --data "from(bucket: \"${BUCKET}\") |> range(start: time(v: \"${START_ISO}\"), stop: time(v: \"${STOP_ISO}\"))" -o "$OUTFILE" \
+        && log "Export completed -> $OUTFILE" || log "Export failed"
+    fi
   fi
 fi
 
@@ -590,31 +657,31 @@ STOP_ISO="$(date -u -d "@${STOP_EPOCH}" +'%Y-%m-%dT%H:%M:%SZ')"
 ## We no longer call the Influx HTTP API to generate Flux reports.
 ## Instead we rely on the exported CSV (OUTFILE) and run the offline generator
 ## which parses the CSV and produces the ODTE and latency CSVs.
-mkdir -p "${RESULTS_DIR}/generated_reports"
+mkdir -p "${TEST_DIR}/generated_reports"
 if [ -f "${OUTFILE}" ]; then
-  log "Generating reports from CSV export: ${OUTFILE} -> ${RESULTS_DIR}/generated_reports"
+  log "Generating reports from CSV export: ${OUTFILE} -> ${TEST_DIR}/generated_reports"
   # prefer the local venv/python if present; otherwise use system python3
   PYTHON=${PYTHON:-python3}
-  "$PYTHON" "${PWD}/scripts/report_generators/generate_reports_from_export.py" "${OUTFILE}" "${PROFILE}" "${RESULTS_DIR}/generated_reports" || log "Offline report generation failed"
+  "$PYTHON" "${PWD}/scripts/report_generators/generate_reports_from_export.py" "${OUTFILE}" "${PROFILE}" "${TEST_DIR}/generated_reports" || log "Offline report generation failed"
 else
   log "No export CSV found (${OUTFILE}); skipping offline report generation"
 fi
 
 # summary
-SUMMARY="${RESULTS_DIR}/summary_${PROFILE}_$(date -u +'%Y%m%dT%H%M%SZ').txt"
+SUMMARY="${TEST_DIR}/summary_${PROFILE}_${TEST_TIMESTAMP}.txt"
 {
   echo "profile: $PROFILE"
   echo "start: $START_ISO"
   echo "duration_seconds: $DURATION"
   echo "bucket_export: ${OUTFILE:-skipped}"
-  echo "reports_dir: ${RESULTS_DIR}"
+  echo "reports_dir: ${TEST_DIR}"
   echo "note: check logs for screen session: screen -r ${TOPO_SCREEN}"
 } > "$SUMMARY"
 
 log "Cenario test finished. Summary -> $SUMMARY"
 
 # Post-process: locate ODTE report CSV and compute mean T, R, A per-sensor
-ODTE_CSV="$(ls -1 ${RESULTS_DIR}/${PROFILE}_odte_*.csv 2>/dev/null | tail -n1 || true)"
+ODTE_CSV="$(ls -1 ${TEST_DIR}/generated_reports/${PROFILE}_odte_*.csv 2>/dev/null | tail -n1 || true)"
 if [ -n "$ODTE_CSV" ]; then
   log "Found ODTE CSV: $ODTE_CSV. Computing mean T/R/A..."
   # CSV from Influx may include columns: _time,_value,_field,... or named columns depending on report.
@@ -648,7 +715,7 @@ if [ -n "$ODTE_CSV" ]; then
     echo "mean_A: $mean_A" >> "$SUMMARY"
   fi
 else
-  log "No ODTE CSV found (${RESULTS_DIR}/${PROFILE}_odte_*.csv) — skipping T/R/A summary"
+  log "No ODTE CSV found (${TEST_DIR}/generated_reports/${PROFILE}_odte_*.csv) — skipping T/R/A summary"
 fi
 
-log "You can review results in $RESULTS_DIR"
+log "You can review results in $TEST_DIR"

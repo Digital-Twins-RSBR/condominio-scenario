@@ -7,13 +7,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /middleware-dt
 
-# Dependências de sistema e ferramentas úteis de rede/diagnóstico
+# Dependências de sistema, Redis e ferramentas úteis de rede/diagnóstico
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
        gcc build-essential \
        iproute2 iputils-ping net-tools procps iptables curl tcpdump \
        inetutils-traceroute dnsutils lsof nano less vim socat iperf3 netcat-openbsd && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Instala Redis separadamente com configuração específica
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends redis-server redis-tools && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    # Verifica se Redis foi instalado corretamente
+    redis-server --version && \
+    redis-cli --version
 
 # Copia e instala apenas requirements primeiro (melhor cache)
 COPY middleware-dt/requirements/ requirements/

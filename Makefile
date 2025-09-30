@@ -15,7 +15,7 @@ MIDDTS_PATH = services/middleware-dt/
 SIMULATOR_PATH = services/iot_simulator/
 DOCKER_PATH = dockerfiles
 # === SETUP E LIMPEZA ===
-.PHONY: setup clean clean-containers reset-db reset-db-tb reset-db-middts reset-db-influx reset-db-neo4j reset-db-sims reset-tb
+.PHONY: setup clean clean-containers clean-controllers reset-db reset-db-tb reset-db-middts reset-db-influx reset-db-neo4j reset-db-sims reset-tb
 
 setup:
 	@echo "[Setup] Executar ./scripts/setup.sh"
@@ -23,6 +23,9 @@ setup:
 
 clean:
 	@echo "[🧼] Limpando ambiente Mininet/Containernet e containers órfãos"
+	@echo "[🛑] Parando controladores OpenFlow em execução..."
+	-sudo pkill -f "controller.*6653" || echo "[INFO] Nenhum controlador na porta 6653 encontrado"
+	-sudo fuser -k 6653/tcp || echo "[INFO] Nenhum processo usando porta 6653"
 	-sudo mn -c || echo "[WARN] mn -c falhou"
 	-docker ps -a --filter "name=mn." -q | xargs -r docker rm -f
 	-docker network ls --filter "name=mn." -q | xargs -r docker network rm
@@ -34,6 +37,12 @@ clean:
 
 clean-containers:
 	docker ps -a --filter "name=mn." -q | xargs -r docker rm -f
+
+clean-controllers:
+	@echo "[🛑] Parando controladores OpenFlow na porta 6653"
+	-sudo pkill -f "controller.*6653" || echo "[INFO] Nenhum controlador encontrado"
+	-sudo fuser -k 6653/tcp || echo "[INFO] Porta 6653 já estava livre"
+	@echo "[✅] Limpeza de controladores concluída"
 
 ## High level reset: calls focused reset targets so operator can compose actions
 reset-db: reset-db-tb reset-db-middts reset-db-influx reset-db-neo4j reset-db-sims
@@ -171,7 +180,12 @@ help:
 	@echo "  containers-recreate -> Remove um container mn.<SERVICE> (use SERVICE=tb)"
 	@echo "  dev                 -> Fluxo rápido (remove containers, build images, executa topo)"
 	@echo "  topo                -> Inicia a topologia (containernet)"
+	@echo "  odte                -> Executa experimento ODTE e gera relatórios (PROFILE=urllc DURATION=1800)"
+	@echo "  odte-full           -> Workflow completo: experimento + análise + gráficos"
+	@echo "  analyze             -> Análise de texto dos relatórios ODTE (REPORTS_DIR=results/generated_reports)"
+	@echo "  plots               -> Gera gráficos dos relatórios ODTE (REPORTS_DIR=results/generated_reports)"
 	@echo "  clean               -> Limpeza completa (rede/veth/containers)"
+	@echo "  clean-controllers   -> Para controladores OpenFlow na porta 6653"
 	@echo "  check               -> Health checks dos containers (use make check)"
 	@echo "Exemplos: make images-build; make containers-recreate SERVICE=tb; make dev"
 
@@ -218,6 +232,15 @@ stop-parser:
 
 topo:
 	@echo "[📡] Executando topologia com Containernet"
+	@echo "[🔍] Verificando controladores em execução na porta 6653..."
+	@if sudo netstat -tlnp 2>/dev/null | grep -q ":6653 "; then \
+		echo "[⚠️] Controlador detectado na porta 6653. Parando..."; \
+		sudo pkill -f "controller.*6653" || true; \
+		sudo fuser -k 6653/tcp || true; \
+		sleep 2; \
+	else \
+		echo "[✅] Porta 6653 livre"; \
+	fi
 	# Use the helper script to centralize environment handling and defaults.
 	# Default behavior preserves state (PRESERVE_STATE=1) unless overridden by caller.
 	# Pass PROFILE (if provided) into the topology runner as TOPO_PROFILE env var
@@ -263,6 +286,77 @@ cenario_test:
 	script="./scripts/cenario_test.sh"; \
 	if [ ! -x "$$script" ]; then chmod +x "$$script"; fi; \
 	"$$script" "$$profile" "$$duration"
+
+.PHONY: odte
+# Run topology, execute the scenario and collect ODTE-related reports
+# Usage: make odte PROFILE=urllc DURATION=1800
+odte:
+	@profile="$${PROFILE:-urllc}"; duration="$${DURATION:-1800}"; \
+	echo "[ODTE] Running topology and collecting ODTE data (PROFILE=$$profile, DURATION=$$duration)"; \
+	SCHEDULE_FILE=/dev/null bash scripts/apply_slice.sh "$$profile" --execute-scenario "$$duration"
+
+.PHONY: plots
+# Generate comprehensive visualization plots from the latest generated reports
+# Usage: make plots [REPORTS_DIR=results/generated_reports]
+plots:
+	@reports_dir="$${REPORTS_DIR:-results/generated_reports}"; \
+	echo "[📊] Generating enhanced URLLC analysis plots from $$reports_dir"; \
+	if [ ! -d "$$reports_dir" ]; then \
+		echo "❌ Reports directory not found: $$reports_dir"; \
+		echo "   Run 'make odte' first to generate reports"; \
+		exit 1; \
+	fi; \
+	if ! command -v python3 >/dev/null 2>&1; then \
+		echo "❌ python3 not found. Please install python3"; \
+		exit 1; \
+	fi; \
+	echo "🎨 Running enhanced visualization script..."; \
+	python3 scripts/report_generators/enhanced_visualize.py "$$reports_dir"; \
+	echo "✅ Plots generated successfully in $$reports_dir/plots/"
+
+.PHONY: analyze
+# Perform comprehensive text-based analysis of ODTE reports without visualization dependencies
+# Usage: make analyze [REPORTS_DIR=results/generated_reports]
+analyze:
+	@reports_dir="$${REPORTS_DIR:-results/generated_reports}"; \
+	echo "[🔍] Performing URLLC performance analysis from $$reports_dir"; \
+	if [ ! -d "$$reports_dir" ]; then \
+		echo "❌ Reports directory not found: $$reports_dir"; \
+		echo "   Run 'make odte' first to generate reports"; \
+		exit 1; \
+	fi; \
+	if ! command -v python3 >/dev/null 2>&1; then \
+		echo "❌ python3 not found. Please install python3"; \
+		exit 1; \
+	fi; \
+	python3 scripts/report_generators/quick_analysis.py "$$reports_dir"
+
+.PHONY: odte-full
+# Complete ODTE workflow: run experiment, generate analysis and plots
+# Usage: make odte-full [PROFILE=urllc] [DURATION=1800] [REPORTS_DIR=results/generated_reports]
+odte-full:
+	@echo "[🚀] Starting complete ODTE workflow..."; \
+	profile="$${PROFILE:-urllc}"; duration="$${DURATION:-1800}"; \
+	reports_dir="$${REPORTS_DIR:-results/generated_reports}"; \
+	echo "[1/3] Running ODTE experiment (PROFILE=$$profile, DURATION=$$duration)..."; \
+	$(MAKE) odte PROFILE=$$profile DURATION=$$duration || { \
+		echo "❌ ODTE experiment failed"; exit 1; \
+	}; \
+	echo "[2/3] Performing analysis..."; \
+	$(MAKE) analyze REPORTS_DIR=$$reports_dir || { \
+		echo "❌ Analysis failed"; exit 1; \
+	}; \
+	echo "[3/3] Generating plots..."; \
+	$(MAKE) plots REPORTS_DIR=$$reports_dir || { \
+		echo "❌ Plot generation failed"; exit 1; \
+	}; \
+	echo "✅ Complete ODTE workflow finished successfully!"
+
+.PHONY: check-link
+# Quick diagnostic to inspect tc qdisc and IPs for containernet containers
+check-link:
+	@echo "[check-link] running scripts/check_tc.sh (requires docker)";
+	@sh scripts/check_tc.sh
 
 topo-screen:
 	@echo "[📡] Executando topologia com Containernet em screen"

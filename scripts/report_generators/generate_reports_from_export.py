@@ -119,30 +119,46 @@ def build_time_lists(rows):
     }
 
 
-def match_sent_to_recv(sent_list_ms, recv_list_ms):
-    # Default pairing: 1:1 sequential pairing where each sent is paired with
-    # at most one recv (the next recv >= sent). This prevents multiple receives
-    # from being attributed to the same sent (avoids R>1 artifacts).
-    # Returns list of tuples (recv_ms, latency_ms).
+def match_sent_to_recv(sent_list_ms, recv_list_ms, max_latency_ms=10000):
+    """
+    Smart pairing with temporal windowing for URLLC optimization.
+    Pairs sent timestamps with the closest receive timestamp within reasonable latency.
+    This handles out-of-order timestamps and multiple response scenarios.
+    """
+    if not sent_list_ms or not recv_list_ms:
+        return []
+    
     sent_sorted = sorted(sent_list_ms)
     recv_sorted = sorted(recv_list_ms)
     pairs = []
-    si = 0
-    ri = 0
-    # advance through both lists pairing each sent to the next recv >= sent
-    while si < len(sent_sorted) and ri < len(recv_sorted):
-        s = sent_sorted[si]
-        r = recv_sorted[ri]
-        if r < s:
-            # this recv happened before the current send, skip it
-            ri += 1
-            continue
-        # r >= s: pair them
-        lat = r - s
-        if lat >= 0:
-            pairs.append((r, lat))
-        si += 1
-        ri += 1
+    used_recv = set()
+    
+    for sent in sent_sorted:
+        best_recv = None
+        best_latency = float('inf')
+        best_idx = -1
+        
+        # Find the closest receive >= sent within reasonable latency window
+        for i, recv in enumerate(recv_sorted):
+            if i in used_recv:
+                continue
+            if recv < sent:
+                continue  # received before sent - invalid
+            
+            latency = recv - sent
+            if latency > max_latency_ms:
+                break  # too far in the future, stop looking
+            
+            if latency < best_latency:
+                best_latency = latency
+                best_recv = recv
+                best_idx = i
+        
+        # If we found a good match, pair them
+        if best_recv is not None and best_latency <= max_latency_ms:
+            pairs.append((best_recv, best_latency))
+            used_recv.add(best_idx)
+    
     return pairs
 
 

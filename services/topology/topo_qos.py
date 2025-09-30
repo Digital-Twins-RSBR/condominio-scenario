@@ -670,7 +670,7 @@ def run_topo(num_sims=5):
 
     # Hosts principais
     tb = safe_add_with_status('tb', 
-        dimage='tb-node-custom',
+        dimage='tb-node-custom:urllc',
         environment={
             'SPRING_DATASOURCE_URL': 'jdbc:postgresql://10.0.0.10:5432/thingsboard',
             'SPRING_DATASOURCE_USERNAME': POSTGRES_USER,

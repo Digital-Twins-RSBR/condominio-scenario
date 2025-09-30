@@ -31,6 +31,10 @@ RUN mkdir -p /var/log/thingsboard \
 # Desabilita serviço de e-mail do ThingsBoard
 ENV MAIL_ENABLED=false
 
+# Copia configuração URLLC otimizada para ambos os locais onde o ThingsBoard pode procurar
+COPY config/thingsboard-urllc.yml /usr/share/thingsboard/conf/thingsboard.yml
+COPY config/thingsboard-urllc.yml /usr/share/thingsboard/bin/thingsboard.yml
+
 # Executa como root para evitar problemas com install.sh
 USER root
 
