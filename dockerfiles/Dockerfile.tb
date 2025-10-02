@@ -1,0 +1,64 @@
+FROM thingsboard/tb-node:4.1.0
+
+USER root
+RUN apt-get update && \
+    apt-get install -y \
+        iproute2 \
+        iputils-ping \
+        net-tools \
+        procps \
+        iptables \
+        curl \
+        tcpdump \
+        postgresql-client \
+        inetutils-traceroute \
+        dnsutils \
+        lsof \
+        nano \
+        less \
+        vim \
+        socat \
+        iperf3 \
+        netcat-openbsd \
+        && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Garante permissões corretas para o diretório de logs do ThingsBoard
+RUN mkdir -p /var/log/thingsboard \
+    && chown -R 1000:1000 /var/log/thingsboard \
+    && chmod 777 /var/log/thingsboard
+
+# Test #10: Hybrid Optimization - Dockerfile level configuration
+# Combina melhor do Test #5 + GC otimizado
+ENV JAVA_OPTS="-Xmx4g -Xms4g -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:MaxGCPauseMillis=10 -XX:G1HeapRegionSize=8m -XX:G1NewSizePercent=50 -XX:G1MaxNewSizePercent=70 -XX:ParallelGCThreads=4 -XX:ConcGCThreads=2 -XX:+AlwaysPreTouch -XX:+UseFastAccessorMethods"
+
+# Thread pools híbridos - balanceados para performance + throughput
+ENV TB_QUEUE_TYPE=in-memory
+ENV TB_QUEUE_CORE_WORKERS=12
+ENV TB_QUEUE_RULE_ENGINE_THREAD_POOL_SIZE=10
+ENV TB_QUEUE_TRANSPORT_THREAD_POOL_SIZE=8
+ENV TB_QUEUE_JS_THREAD_POOL_SIZE=4
+ENV TB_QUEUE_TRANSPORT_POLL_INTERVAL=1
+ENV TB_QUEUE_RULE_ENGINE_POLL_INTERVAL=1
+ENV ACTORS_SYSTEM_MAX_ACTOR_MAILBOX_SIZE=1000
+
+# MQTT otimizado híbrido - buffers balanceados
+ENV MQTT_NETTY_MAX_PAYLOAD_SIZE=65536
+ENV MQTT_NETTY_SO_KEEP_ALIVE=true
+ENV MQTT_NETTY_TCP_NO_DELAY=true
+ENV MQTT_NETTY_SO_RCV_BUF=196608
+ENV MQTT_NETTY_SO_SND_BUF=196608
+ENV MQTT_NETTY_BOSS_GROUP_THREAD_COUNT=2
+ENV MQTT_NETTY_WORKER_GROUP_THREAD_COUNT=6
+
+
+# Desabilita serviço de e-mail do ThingsBoard
+ENV MAIL_ENABLED=false
+
+# Copia configuração URLLC otimizada para ambos os locais onde o ThingsBoard pode procurar
+COPY config/thingsboard-urllc.yml /usr/share/thingsboard/conf/thingsboard.yml
+COPY config/thingsboard-urllc.yml /usr/share/thingsboard/bin/thingsboard.yml
+
+# Executa como root para evitar problemas com install.sh
+USER root
+
+CMD ["/bin/bash"]

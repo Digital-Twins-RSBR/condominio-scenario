@@ -1,0 +1,29 @@
+i# Python
+__pycache__/
+*.py[cod]
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+test_output/
+exemplo_3sims/
+
+# Django
+*.sqlite3
+*.log
+.env
+.env.*
+venv/
+
+# VSCode
+.vscode/
+
+# Docker
+*.pid
+*.seed
+docker-compose.override.yml
+
+# System
+.DS_Store
+Thumbs.db

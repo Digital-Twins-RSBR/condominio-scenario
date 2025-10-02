@@ -1,0 +1,54 @@
+# ==============================================================================
+# PERFIL: REDUCED LOAD - ANÁLISE DE SATURAÇÃO
+# ==============================================================================
+# Configuração para identificar ponto de saturação do sistema
+# Objetivo: Reduzir carga computacional mantendo otimizações
+# Para usar com 3-5 simuladores
+# ==============================================================================
+
+# === RPC CONFIGURATION (AGRESSIVA MAS ESTÁVEL) ===
+CLIENT_SIDE_RPC_TIMEOUT: 150
+
+# === HTTP OPTIMIZATION ===
+HTTP_REQUEST_TIMEOUT_MS: 750
+HTTP_MAX_CONNECTIONS: 200
+HTTP_MAX_CONNECTIONS_PER_ROUTE: 50
+HTTP_CONNECTION_TIMEOUT_MS: 500
+HTTP_SOCKET_TIMEOUT_MS: 750
+
+# === BATCH PROCESSING OPTIMIZATION ===
+SQL_TS_BATCH_SIZE: 1500
+SQL_TS_BATCH_MAX_DELAY_MS: 8
+SQL_TS_LATEST_BATCH_SIZE: 750
+SQL_TS_LATEST_BATCH_MAX_DELAY_MS: 4
+SQL_TS_BATCH_THREADS: 3
+SQL_TS_LATEST_BATCH_THREADS: 3
+
+# === QUEUE OPTIMIZATION (REDUZIDA) ===
+TB_QUEUE_CORE_POLL_INTERVAL_MS: 10
+TB_QUEUE_CORE_PARTITIONS: 8
+TB_QUEUE_CORE_WORKERS: 16
+TB_QUEUE_RULE_ENGINE_THREAD_POOL_SIZE: 32
+TB_QUEUE_TRANSPORT_THREAD_POOL_SIZE: 32
+TB_QUEUE_JS_THREAD_POOL_SIZE: 16
+
+# === JVM OPTIMIZATION (MODERADA) ===
+JAVA_OPTS: "-Xms6g -Xmx8g -XX:+UseG1GC -XX:MaxGCPauseMillis=15 -XX:G1HeapRegionSize=16m -XX:+UseStringDeduplication -XX:G1NewSizePercent=40 -XX:G1MaxNewSizePercent=60 -server"
+
+# === ACTOR SYSTEM (REDUZIDO) ===
+ACTORS_SYSTEM_THROUGHPUT: 5
+ACTORS_SYSTEM_DEVICE_DISPATCHER_POOL_SIZE: 4
+ACTORS_SYSTEM_RULE_DISPATCHER_POOL_SIZE: 8
+ACTORS_RULE_DB_CALLBACK_THREAD_POOL_SIZE: 25
+
+# === DATABASE CONNECTION POOL ===
+SPRING_DATASOURCE_MAXIMUM_POOL_SIZE: 16
+
+# === MQTT OPTIMIZATION ===
+MQTT_TIMEOUT_MS: 5000
+NETTY_WORKER_GROUP_THREADS: 8
+
+# === PERFIL INFO ===
+PROFILE_NAME: "Reduced Load Analysis"
+PROFILE_DESCRIPTION: "Configuração para análise de saturação com menos simuladores - RPC 150ms"
+HEARTBEAT_INTERVAL: 3

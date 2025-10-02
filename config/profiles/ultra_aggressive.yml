@@ -1,0 +1,45 @@
+# ==============================================================================
+# PERFIL: ULTRA-AGRESSIVO - BASEADO NA ANÁLISE DE GARGALOS
+# ==============================================================================
+# Criado após análise detalhada dos bottlenecks do sistema
+# Foco: Reduzir drasticamente timeouts e aumentar concorrência
+# ThingsBoard CPU: 482.9% pico - precisa de otimização JVM/threading
+# ==============================================================================
+
+# === RPC CONFIGURATION (ULTRA-AGRESSIVA) ===
+CLIENT_SIDE_RPC_TIMEOUT: 200
+
+# === HTTP OPTIMIZATION (EXTREMA) ===
+HTTP_REQUEST_TIMEOUT_MS: 1000
+HTTP_MAX_CONNECTIONS: 500
+HTTP_MAX_CONNECTIONS_PER_ROUTE: 100
+HTTP_CONNECTION_TIMEOUT_MS: 500
+HTTP_SOCKET_TIMEOUT_MS: 1000
+
+# === BATCH PROCESSING OPTIMIZATION (MÍNIMO DELAY) ===
+SQL_TS_BATCH_SIZE: 2000
+SQL_TS_BATCH_MAX_DELAY_MS: 5
+SQL_TS_LATEST_BATCH_SIZE: 1000
+SQL_TS_LATEST_BATCH_MAX_DELAY_MS: 2
+SERVER_DATASOURCES_DEFAULT_BATCH_SIZE: 500
+SERVER_DATASOURCES_DEFAULT_BATCH_MAX_DELAY_MS: 10
+
+# === QUEUE OPTIMIZATION (ALTA CONCORRÊNCIA) ===
+TB_QUEUE_CORE_POLL_INTERVAL_MS: 5
+TB_QUEUE_CORE_PARTITIONS: 12
+TB_QUEUE_CORE_WORKERS: 24
+TB_QUEUE_RULE_ENGINE_THREAD_POOL_SIZE: 64
+TB_QUEUE_TRANSPORT_THREAD_POOL_SIZE: 64
+TB_QUEUE_JS_THREAD_POOL_SIZE: 32
+
+# === JVM OPTIMIZATION (MÁXIMA PERFORMANCE) ===
+JAVA_OPTS: "-Xms12g -Xmx16g -XX:+UseG1GC -XX:MaxGCPauseMillis=10 -XX:G1HeapRegionSize=16m -XX:+UseStringDeduplication -XX:+OptimizeStringConcat -XX:+UseFastUnorderedTimeStamps -XX:+UnlockExperimentalVMOptions -server"
+
+# === MQTT OPTIMIZATION (BAIXA LATÊNCIA) ===
+MQTT_TIMEOUT_MS: 2000
+MQTT_KEEP_ALIVE_SECONDS: 15
+
+# === PERFIL INFO ===
+PROFILE_NAME: "Ultra-Aggressive URLLC"
+PROFILE_DESCRIPTION: "Configuração ultra-agressiva baseada em análise de gargalos - RPC 200ms, HTTP 1000ms, JVM 16GB"
+HEARTBEAT_INTERVAL: 2

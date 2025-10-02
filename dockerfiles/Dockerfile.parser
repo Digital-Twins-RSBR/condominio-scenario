@@ -1,0 +1,8 @@
+# Dockerfile.parser
+FROM andregustavoo/parserwebapi:latest
+
+USER root
+RUN apt-get update && \
+    apt-get install -y iputils-ping iproute2 netcat-openbsd dnsutils curl && \
+    rm -rf /var/lib/apt/lists/*
+USER app

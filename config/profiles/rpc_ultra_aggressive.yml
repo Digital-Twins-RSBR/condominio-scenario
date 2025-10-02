@@ -1,0 +1,46 @@
+# ==============================================================================
+# PERFIL: RPC ULTRA-AGGRESSIVE (Test #13 Style)
+# ==============================================================================
+# Baseado em: Test #13 - RPC timeout ultra-agressivo
+# Foco: Reduzir latência S2M drasticamente
+# Target: <200ms em ambas direções
+# ==============================================================================
+
+# === THINGSBOARD CORE CONFIGURATION ===
+SERVER_DATASOURCES_DEFAULT_BATCH_SIZE: 500
+SERVER_DATASOURCES_DEFAULT_BATCH_MAX_DELAY_MS: 5
+
+# === RPC CONFIGURATION (ULTRA-AGRESSIVA) ===
+CLIENT_SIDE_RPC_TIMEOUT: 300
+
+# === HTTP OPTIMIZATION (ULTRA-AGRESSIVA) ===
+HTTP_REQUEST_TIMEOUT_MS: 800
+HTTP_MAX_CONNECTIONS: 400
+HTTP_MAX_CONNECTIONS_PER_ROUTE: 100
+HTTP_CONNECTION_TIMEOUT_MS: 200
+HTTP_SOCKET_TIMEOUT_MS: 500
+
+# === BATCH PROCESSING OPTIMIZATION (ULTRA) ===
+SQL_TS_BATCH_SIZE: 2000
+SQL_TS_BATCH_MAX_DELAY_MS: 5
+SQL_TS_LATEST_BATCH_SIZE: 1000
+SQL_TS_LATEST_BATCH_MAX_DELAY_MS: 2
+
+# === QUEUE OPTIMIZATION (ULTRA) ===
+TB_QUEUE_CORE_POLL_INTERVAL_MS: 5
+TB_QUEUE_CORE_PARTITIONS: 8
+TB_QUEUE_CORE_WORKERS: 16
+TB_QUEUE_RULE_ENGINE_THREAD_POOL_SIZE: 12
+TB_QUEUE_TRANSPORT_THREAD_POOL_SIZE: 10
+
+# === JVM OPTIMIZATION (HIGH MEMORY) ===
+JAVA_OPTS: "-Xms12g -Xmx12g -XX:+UseG1GC -XX:G1HeapRegionSize=32m -XX:+UseStringDeduplication -XX:+OptimizeStringConcat -XX:MaxGCPauseMillis=20 -server"
+
+# === MQTT OPTIMIZATION (AGGRESSIVE) ===
+MQTT_TIMEOUT_MS: 3000
+MQTT_KEEP_ALIVE_SECONDS: 15
+
+# === PERFIL INFO ===
+PROFILE_NAME: "RPC Ultra-Aggressive"
+PROFILE_DESCRIPTION: "RPC timeout 300ms, HTTP ultra-otimizado, target <200ms"
+HEARTBEAT_INTERVAL: 4

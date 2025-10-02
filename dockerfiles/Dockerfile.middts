@@ -1,0 +1,47 @@
+
+# Dockerfile.middts
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /middleware-dt
+
+# Dependências de sistema, Redis e ferramentas úteis de rede/diagnóstico
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+       gcc build-essential \
+       iproute2 iputils-ping net-tools procps iptables curl tcpdump \
+       inetutils-traceroute dnsutils lsof nano less vim socat iperf3 netcat-openbsd && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Instala Redis separadamente com configuração específica
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends redis-server redis-tools && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    # Verifica se Redis foi instalado corretamente
+    redis-server --version && \
+    redis-cli --version
+
+# Copia e instala apenas requirements primeiro (melhor cache)
+COPY middleware-dt/requirements/ requirements/
+RUN pip install --no-cache-dir -r requirements/base.txt
+
+# Copia código da aplicação (apenas pasta específica)
+COPY middleware-dt/ .
+
+# Symlinks para contornar nome de pacote com hífen e pacote interno
+RUN ln -sf /middleware-dt /middleware_dt \
+ && ln -sf /middleware-dt/middleware-dt /middleware-dt/middleware_dt \
+ && /bin/sh -c "[ -f middleware-dt/settings.py ] || printf 'from .settings_base import *\n' > middleware-dt/settings.py"
+
+ENV DJANGO_SETTINGS_MODULE=middleware_dt.settings
+
+EXPOSE 8000
+
+COPY middleware-dt/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=5 CMD curl -fsS http://localhost:8000/ || exit 1
+
+ENTRYPOINT ["/entrypoint.sh"]
