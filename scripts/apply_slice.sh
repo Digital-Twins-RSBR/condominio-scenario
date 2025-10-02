@@ -452,6 +452,7 @@ start_simulators() {
     # Ensure .env exists inside the container (copy from .env.example if present)
     docker exec "$s" bash -lc "if [ ! -f /iot_simulator/.env ] && [ -f /iot_simulator/.env.example ]; then echo '[auto] copying .env.example -> .env inside container'; cp /iot_simulator/.env.example /iot_simulator/.env; fi" >/dev/null 2>&1 || true
     # Source the container's .env so THINGSBOARD_* and INFLUX_* are available to the process
+    # HEARTBEAT_INTERVAL and optimizations are now set by default in Dockerfile
     docker exec -d "$s" bash -lc "if [ -f /iot_simulator/.env ]; then set -a; . /iot_simulator/.env; set +a; fi; cd /iot_simulator || true; nohup python3 manage.py send_telemetry --use-influxdb --randomize > /iot_simulator/send_telemetry.out 2>&1 & echo \$! >/tmp/send_telemetry.pid" || log "Failed to start send_telemetry in $s"
     # warn if THINGSBOARD credentials missing inside the container env file
     if ! docker exec "$s" bash -lc "[ -f /iot_simulator/.env ] && grep -q '^THINGSBOARD_USER=' /iot_simulator/.env >/dev/null 2>&1"; then
@@ -487,7 +488,51 @@ fi
 log "Running test for ${DURATION}s..."
 sleep "$DURATION"
 
-log "Test duration elapsed; performing shutdown actions..."
+log "Test duration elapsed; capturing data BEFORE stopping processes..."
+
+# ================================================
+# CRITICAL: Export InfluxDB data BEFORE stopping update_causal_property
+# This ensures M2S command counts are captured correctly
+# ================================================
+BUCKET="${BUCKET:-${INFLUXDB_BUCKET:-${IOT_INFLUX_BUCKET:-iot_data}}}"
+OUTFILE="${TEST_DIR}/${PROFILE}_${TEST_TIMESTAMP}.csv"
+INFLUX_ORG="${INFLUXDB_ORG:-${INFLUX_ORG:-minha_org}}"
+INFLUX_TOKEN="${INFLUXDB_TOKEN:-${INFLUX_TOKEN:-}}"
+
+# Allow overriding the Influx host/port via env vars (INFLUXDB_HOST/INFLUXDB_PORT or INFLUX_HOST/INFLUX_PORT)
+INFLUX_HOST="${INFLUXDB_HOST:-${INFLUX_HOST:-mn.influxdb}}"
+INFLUX_PORT="${INFLUXDB_PORT:-${INFLUX_PORT:-8086}}"
+BASE_INFLUX_URL="http://${INFLUX_HOST}:${INFLUX_PORT}"
+
+# Choose curl command (containerized vs host) - check both mn.influx and mn.influxdb
+if docker ps --format '{{.Names}}' | grep -q '^mn\.influx$'; then
+  CURL_CMD="docker exec mn.influx curl -s"
+elif docker ps --format '{{.Names}}' | grep -q '^mn\.influxdb$'; then
+  CURL_CMD="docker exec mn.influxdb curl -s"
+  INFLUX_HOST="localhost"  # When running inside container, use localhost
+else
+  CURL_CMD="curl -s"
+fi
+
+if [ -z "$INFLUX_TOKEN" ]; then
+  log "INFLUX_TOKEN not set. Cannot export Influx CSV. Skipping export."
+else
+  log "⚡ PRIORITY EXPORT: Capturing InfluxDB data while update_causal_property is still running..."
+  # Quick export without creating scenario bucket to avoid delays
+  if $CURL_CMD --request POST "${BASE_INFLUX_URL}/api/v2/query?org=${INFLUX_ORG}" \
+        --header "Authorization: Token ${INFLUX_TOKEN}" \
+        --header 'Accept: text/csv' \
+        --header 'Content-type: application/vnd.flux' \
+        --data "from(bucket: \"${BUCKET}\") |> range(start: time(v: \"${START_ISO}\"), stop: time(v: \"${STOP_ISO}\"))" -o "$OUTFILE" \
+        && log "⚡ Priority export completed -> $OUTFILE" || log "❌ Priority export failed"; then
+    log "✅ M2S data captured successfully before process shutdown"
+  else
+    log "❌ Failed to capture M2S data - will try again after shutdown"
+    OUTFILE=""  # Clear so later export will be attempted
+  fi
+fi
+
+log "Now stopping processes after data capture..."
 
 # stop update_causal_property
 if [ -n "$MID_CNT" ]; then
@@ -531,11 +576,20 @@ except Exception as e:
   sleep 2
 fi
 
-# export bucket to CSV
-BUCKET="${BUCKET:-${INFLUXDB_BUCKET:-${IOT_INFLUX_BUCKET:-iot_data}}}"
-OUTFILE="${TEST_DIR}/${PROFILE}_${TEST_TIMESTAMP}.csv"
-INFLUX_ORG="${INFLUXDB_ORG:-${INFLUX_ORG:-minha_org}}"
-INFLUX_TOKEN="${INFLUXDB_TOKEN:-${INFLUX_TOKEN:-}}"
+# ================================================
+# Secondary export attempt (only if priority export failed)
+# ================================================
+if [ -z "${OUTFILE}" ] || [ ! -f "${OUTFILE}" ]; then
+  log "Priority export failed or missing - attempting secondary export..."
+  BUCKET="${BUCKET:-${INFLUXDB_BUCKET:-${IOT_INFLUX_BUCKET:-iot_data}}}"
+  OUTFILE="${TEST_DIR}/${PROFILE}_${TEST_TIMESTAMP}.csv"
+  INFLUX_ORG="${INFLUXDB_ORG:-${INFLUX_ORG:-minha_org}}"
+  INFLUX_TOKEN="${INFLUXDB_TOKEN:-${INFLUX_TOKEN:-}}"
+else
+  log "Priority export successful - skipping secondary export"
+  # Skip to report generation
+  SKIP_SECONDARY_EXPORT=1
+fi
 
 # Allow overriding the Influx host/port via env vars (INFLUXDB_HOST/INFLUXDB_PORT or INFLUX_HOST/INFLUX_PORT)
 INFLUX_HOST="${INFLUXDB_HOST:-${INFLUX_HOST:-localhost}}"
@@ -568,11 +622,14 @@ choose_influx_curl() {
   return 1
 }
 
-choose_influx_curl
-
-if [ -z "$INFLUX_TOKEN" ]; then
-  log "INFLUX_TOKEN not set. Cannot export Influx CSV. Skipping export."
+if [ "${SKIP_SECONDARY_EXPORT:-0}" = "1" ]; then
+  log "Skipping secondary export - priority export was successful"
 else
+  choose_influx_curl
+
+  if [ -z "$INFLUX_TOKEN" ]; then
+    log "INFLUX_TOKEN not set. Cannot export Influx CSV. Skipping export."
+  else
   log "Exporting bucket '$BUCKET' to $OUTFILE (this may take a while)..."
   # Quick pre-check: ask Influx for a single point in the time window. If none, skip export to avoid creating empty CSVs.
   TMP_CHECK_FILE="$(mktemp --tmpdir=/tmp influx_check_XXXX.csv)"
@@ -647,7 +704,8 @@ else
         && log "Export completed -> $OUTFILE" || log "Export failed"
     fi
   fi
-fi
+  fi  # End of secondary export block
+fi  # End of SKIP_SECONDARY_EXPORT check
 
 # run flux reports in services/middleware-dt/docs replacing time window
 REPORTS_DIR="services/middleware-dt/docs"

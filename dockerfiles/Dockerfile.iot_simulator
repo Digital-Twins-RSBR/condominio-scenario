@@ -24,6 +24,10 @@ RUN [ -f iot_simulator/settings.py ] || /bin/sh -c "printf 'from .settings_base 
 
 ENV DJANGO_SETTINGS_MODULE=iot_simulator.settings
 
+# Aplicar otimizações de latência como configuração padrão
+ENV HEARTBEAT_INTERVAL=4
+ENV MQTT_TIMEOUT=5
+
 COPY iot_simulator/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

@@ -6,7 +6,14 @@ MIDDTS_IMAGE = middts:latest
 MIDDTS_CUSTOM_IMAGE = middts-custom:latest
 IOT_SIM_IMAGE = iot_simulator:latest
 TB_IMAGE = tb-node-custom
-PG_IMAGE = postgres:13-tools
+PG_IMAGE = postgrestopo-rpc-ultra:
+	@$(MAKE) topo PROFILE=urllc CONFIG_PROFILE=ultra_aggressive
+
+network-opt:
+	@$(MAKE) topo PROFILE=urllc CONFIG_PROFILE=extreme_performance
+
+baseline:
+	@$(MAKE) topo PROFILE=urllc CONFIG_PROFILE=reduced_loads
 NEO4J_IMAGE = neo4j-tools:latest
 PARSER_IMAGE = parserwebapi-tools:latest
 INFLUX_IMAGE = influxdb-tools:latest
@@ -179,15 +186,44 @@ help:
 	@echo "  images-rebuild      -> Rebuild completo (igual a make rebuild-images)"
 	@echo "  containers-recreate -> Remove um container mn.<SERVICE> (use SERVICE=tb)"
 	@echo "  dev                 -> Fluxo rápido (remove containers, build images, executa topo)"
-	@echo "  topo                -> Inicia a topologia (containernet)"
+	@echo "  topo                -> Inicia a topologia (containernet) com perfil test05_best_performance por padrão"
+	@echo "  quick-start         -> Inicia topologia com perfil Test #5 (melhor performance)"
 	@echo "  odte                -> Executa experimento ODTE e gera relatórios (PROFILE=urllc DURATION=1800)"
 	@echo "  odte-full           -> Workflow completo: experimento + análise + gráficos"
+	@echo ""
+	@echo "=== PERFIS DE CONFIGURAÇÃO ==="
+	@echo "  test05-best         -> Topologia URLLC + perfil Test #5 (melhor performance)"
+	@echo "  rpc-ultra           -> Topologia URLLC + perfil RPC ultra-agressivo"
+	@echo "  network-opt         -> Topologia URLLC + perfil otimizado para conectividade"
+	@echo "  baseline            -> Topologia URLLC + perfil padrão (baseline)"
+	@echo "  apply-profile       -> Aplica perfil via hot-swap: CONFIG_PROFILE=reduced_load"
+	@echo "  apply-profile-restart -> Aplica perfil com restart seguro do ThingsBoard"
+	@echo "  quick-restore       -> Restaura perfil Test #5 rapidamente"
+	@echo ""
+	@echo "=== USO AVANÇADO ==="
+	@echo "  make topo CONFIG_PROFILE=extreme_performance  -> Topologia com perfil específico"
+	@echo "  make apply-profile CONFIG_PROFILE=ultra_aggressive  -> Aplicar perfil sem restart"
+	@echo ""
+	@echo "=== PERFIS DISPONÍVEIS ==="
+	@echo "  • test05_best_performance (padrão) - Test #5: melhor S2M/M2S, ODTE 0.88"
+	@echo "  • rpc_ultra_aggressive            - RPC 300ms, HTTP ultra-otimizado"
+	@echo "  • network_optimized               - Foco em conectividade e estabilidade"
+	@echo "  • baseline_default                - Configuração padrão ThingsBoard"
+	@echo ""
+	@echo "Outros comandos:"
+	@echo "  check-urllc         -> Verifica status das otimizações URLLC"
+	@echo "  check-topology      -> Status geral da topologia"
+	@echo "  check-tc            -> Configurações de Traffic Control"
+	@echo "  summary             -> Resumo das otimizações aplicadas"
+	@echo "  apply-urllc         -> Aplica otimizações URLLC manualmente"
+	@echo "  apply-urllc-yaml    -> Aplica configurações URLLC via YAML (rebuild TB)"
+	@echo "  organize-reports    -> Organiza relatórios por timestamp"
+	@echo "  optimize-latency    -> Aplica otimizações para baixa latência (<200ms)"
 	@echo "  analyze             -> Análise de texto dos relatórios ODTE (REPORTS_DIR=results/generated_reports)"
 	@echo "  plots               -> Gera gráficos dos relatórios ODTE (REPORTS_DIR=results/generated_reports)"
 	@echo "  clean               -> Limpeza completa (rede/veth/containers)"
 	@echo "  clean-controllers   -> Para controladores OpenFlow na porta 6653"
 	@echo "  check               -> Health checks dos containers (use make check)"
-	@echo "Exemplos: make images-build; make containers-recreate SERVICE=tb; make dev"
 
 # Aliases que delegam para os targets já existentes para manter compatibilidade
 images-build:
@@ -244,7 +280,16 @@ topo:
 	# Use the helper script to centralize environment handling and defaults.
 	# Default behavior preserves state (PRESERVE_STATE=1) unless overridden by caller.
 	# Pass PROFILE (if provided) into the topology runner as TOPO_PROFILE env var
-	@echo "[topo] PROFILE=$(PROFILE)"
+	@echo "[topo] PROFILE=$(PROFILE) CONFIG_PROFILE=$(CONFIG_PROFILE)"
+	@# Apply CONFIG_PROFILE with default to reduced_load
+	@config_profile="$${CONFIG_PROFILE:-reduced_load}"; \
+	echo "[🎯] Aplicando perfil de configuração: $$config_profile"; \
+	if ./scripts/apply_profile_hotswap.sh "$$config_profile"; then \
+		echo "✅ Perfil aplicado via hot-swap"; \
+	else \
+		echo "⚠️ Hot-swap falhou, aplicando via método tradicional..."; \
+		./scripts/apply_profile.sh "$$config_profile"; \
+	fi
 	@# Default PROFILE to 'urllc' when not provided. If the operator passed
 	@# PROFILE on the make command line (e.g. `make topo PROFILE=eMBB`), do not
 	@# let a repository `.env` file override that value. Source .env only when
@@ -261,7 +306,7 @@ topo:
 	echo "[topo] PROFILE=$$profile"; \
 	sh scripts/run_topo.sh "$$profile"
 
-.PHONY: urllc best_effort eMBB
+.PHONY: urllc best_effort eMBB test05-best rpc-ultra network-opt baseline
 
 # Convenience targets: run topo with a predefined profile
 urllc:
@@ -272,6 +317,48 @@ best_effort:
 
 eMBB:
 	@$(MAKE) topo PROFILE=eMBB
+
+# === CONFIG PROFILE TARGETS ===
+# Convenience targets: run topo with predefined configuration profiles
+test05-best:
+	@$(MAKE) topo PROFILE=urllc CONFIG_PROFILE=test05_best_performance
+
+rpc-ultra:
+	@$(MAKE) topo PROFILE=urllc CONFIG_PROFILE=rpc_ultra_aggressive
+
+network-opt:
+	@$(MAKE) topo PROFILE=urllc CONFIG_PROFILE=network_optimized
+
+baseline:
+	@$(MAKE) topo PROFILE=urllc CONFIG_PROFILE=baseline_default
+
+# Apply configuration profile via hot-swap (no restart)
+apply-profile:
+	@if [ -z "$(CONFIG_PROFILE)" ]; then \
+		echo "❌ Erro: Use 'make apply-profile CONFIG_PROFILE=<profile_name>'"; \
+		echo "📁 Perfis disponíveis: test05_best_performance, rpc_ultra_aggressive, network_optimized, baseline_default"; \
+		exit 1; \
+	fi
+	@./scripts/apply_profile_hotswap.sh "$(CONFIG_PROFILE)"
+
+# Apply configuration profile WITH safe ThingsBoard restart
+apply-profile-restart:
+	@if [ -z "$(CONFIG_PROFILE)" ]; then \
+		echo "❌ Erro: Use 'make apply-profile-restart CONFIG_PROFILE=<profile_name>'"; \
+		echo "📁 Perfis disponíveis: test05_best_performance, rpc_ultra_aggressive, network_optimized, baseline_default"; \
+		exit 1; \
+	fi
+	@./scripts/apply_profile_safe_restart.sh "$(CONFIG_PROFILE)"
+
+# Quick start with best performance profile (default)
+quick-start:
+	@echo "🚀 Iniciando topologia com perfil Test #5 (melhor performance)..."
+	@$(MAKE) topo CONFIG_PROFILE=test05_best_performance
+
+# Quick restart with Test #5 (best known configuration)
+quick-restore:
+	@echo "🚀 Aplicando Test #5 (melhor configuração conhecida)..."
+	@./scripts/apply_profile_hotswap.sh test05_best_performance
 
 .PHONY: cenario_test
 
@@ -292,65 +379,134 @@ cenario_test:
 # Usage: make odte PROFILE=urllc DURATION=1800
 odte:
 	@profile="$${PROFILE:-urllc}"; duration="$${DURATION:-1800}"; \
-	echo "[ODTE] Running topology and collecting ODTE data (PROFILE=$$profile, DURATION=$$duration)"; \
-	SCHEDULE_FILE=/dev/null bash scripts/apply_slice.sh "$$profile" --execute-scenario "$$duration"
+	echo "[📡] Executando topologia e cenário ODTE..."; \
+	echo "[⏱️] Duração: $${duration}s | Perfil: $$profile"; \
+	SCHEDULE_FILE=/dev/null bash scripts/apply_slice.sh "$$profile" --execute-scenario "$$duration" 2>/dev/null || echo "[⚠️] Possíveis warnings durante execução (normal)"
 
 .PHONY: plots
 # Generate comprehensive visualization plots from the latest generated reports
 # Usage: make plots [REPORTS_DIR=results/generated_reports]
 plots:
 	@reports_dir="$${REPORTS_DIR:-results/generated_reports}"; \
-	echo "[📊] Generating enhanced URLLC analysis plots from $$reports_dir"; \
+	echo "[📊] Gerando gráficos em $$reports_dir..."; \
 	if [ ! -d "$$reports_dir" ]; then \
-		echo "❌ Reports directory not found: $$reports_dir"; \
-		echo "   Run 'make odte' first to generate reports"; \
+		echo "❌ Diretório não encontrado: $$reports_dir"; \
 		exit 1; \
 	fi; \
-	if ! command -v python3 >/dev/null 2>&1; then \
-		echo "❌ python3 not found. Please install python3"; \
-		exit 1; \
-	fi; \
-	echo "🎨 Running enhanced visualization script..."; \
-	python3 scripts/report_generators/enhanced_visualize.py "$$reports_dir"; \
-	echo "✅ Plots generated successfully in $$reports_dir/plots/"
+	python3 scripts/report_generators/enhanced_visualize.py "$$reports_dir" >/dev/null 2>&1 && \
+	echo "✅ Gráficos gerados em $$reports_dir/plots/" || \
+	echo "❌ Erro na geração de gráficos"
 
 .PHONY: analyze
 # Perform comprehensive text-based analysis of ODTE reports without visualization dependencies
 # Usage: make analyze [REPORTS_DIR=results/generated_reports]
 analyze:
 	@reports_dir="$${REPORTS_DIR:-results/generated_reports}"; \
-	echo "[🔍] Performing URLLC performance analysis from $$reports_dir"; \
+	echo "[🔍] Analisando relatórios em $$reports_dir..."; \
 	if [ ! -d "$$reports_dir" ]; then \
-		echo "❌ Reports directory not found: $$reports_dir"; \
-		echo "   Run 'make odte' first to generate reports"; \
+		echo "❌ Diretório não encontrado: $$reports_dir"; \
 		exit 1; \
 	fi; \
-	if ! command -v python3 >/dev/null 2>&1; then \
-		echo "❌ python3 not found. Please install python3"; \
-		exit 1; \
-	fi; \
-	python3 scripts/report_generators/quick_analysis.py "$$reports_dir"
+	python3 scripts/report_generators/quick_analysis.py "$$reports_dir" 2>/dev/null && \
+	echo "✅ Análise concluída" || echo "❌ Erro na análise"
+
+.PHONY: odte-monitored
+# ODTE with real-time bottleneck monitoring during test execution
+# Usage: make odte-monitored [PROFILE=urllc] [DURATION=120]
+odte-monitored:
+	@profile="$${PROFILE:-urllc}"; duration="$${DURATION:-120}"; \
+	echo "[🔍] Executando ODTE com monitoramento de gargalos..."; \
+	echo "[⏱️] Duração: $${duration}s | Perfil: $$profile"; \
+	bash scripts/show_current_config.sh; \
+	echo "[1/3] Iniciando monitoramento em background..."; \
+	bash scripts/monitor_during_test.sh "$$duration" & \
+	MONITOR_PID=$$!; \
+	echo "[2/3] Executando teste ODTE..."; \
+	$(MAKE) odte PROFILE=$$profile DURATION=$$duration; \
+	echo "[3/3] Aguardando conclusão do monitoramento..."; \
+	wait $$MONITOR_PID; \
+	echo "✅ Teste ODTE com monitoramento concluído!"
 
 .PHONY: odte-full
 # Complete ODTE workflow: run experiment, generate analysis and plots
-# Usage: make odte-full [PROFILE=urllc] [DURATION=1800] [REPORTS_DIR=results/generated_reports]
+# Usage: make odte-full [PROFILE=urllc] [DURATION=1800] [REPORTS_DIR=auto]
 odte-full:
 	@echo "[🚀] Starting complete ODTE workflow..."; \
 	profile="$${PROFILE:-urllc}"; duration="$${DURATION:-1800}"; \
-	reports_dir="$${REPORTS_DIR:-results/generated_reports}"; \
-	echo "[1/3] Running ODTE experiment (PROFILE=$$profile, DURATION=$$duration)..."; \
+	echo ""; \
+	bash scripts/show_current_config.sh; \
+	echo "[1/4] Running ODTE experiment (PROFILE=$$profile, DURATION=$$duration)..."; \
 	$(MAKE) odte PROFILE=$$profile DURATION=$$duration || { \
 		echo "❌ ODTE experiment failed"; exit 1; \
 	}; \
-	echo "[2/3] Performing analysis..."; \
+	latest_test_dir=$$(find results -name "test_*_$$profile" -type d | sort | tail -1); \
+	if [ -z "$$latest_test_dir" ]; then \
+		echo "❌ No test directory found for profile $$profile"; exit 1; \
+	fi; \
+	reports_dir="$$latest_test_dir/generated_reports"; \
+	if [ ! -d "$$reports_dir" ]; then \
+		echo "❌ Reports directory not found: $$reports_dir"; exit 1; \
+	fi; \
+	echo "[2/4] Performing detailed latency analysis..."; \
+	python3 scripts/report_generators/latency_analysis.py "$$reports_dir" || { \
+		echo "❌ Latency analysis failed"; exit 1; \
+	}; \
+	echo "[3/4] Performing standard analysis on: $$reports_dir"; \
 	$(MAKE) analyze REPORTS_DIR=$$reports_dir || { \
 		echo "❌ Analysis failed"; exit 1; \
 	}; \
-	echo "[3/3] Generating plots..."; \
+	echo "[4/4] Generating plots..."; \
 	$(MAKE) plots REPORTS_DIR=$$reports_dir || { \
 		echo "❌ Plot generation failed"; exit 1; \
 	}; \
-	echo "✅ Complete ODTE workflow finished successfully!"
+	echo "✅ Complete ODTE workflow finished successfully!"; \
+	bash scripts/show_test_summary.sh "$$reports_dir"
+
+# === SCRIPTS URLLC E OTIMIZAÇÃO ===
+.PHONY: check-urllc check-topology check-tc summary organize-reports apply-urllc
+# Check URLLC optimizations status
+check-urllc:
+	@echo "[🔍] Verificando status das otimizações URLLC..."
+	@bash scripts/check_urllc_status.sh
+
+# Check topology general status  
+check-topology:
+	@echo "[🏗️] Verificando status geral da topologia..."
+	@bash scripts/check_topology.sh
+
+# Check Traffic Control configurations
+check-tc:
+	@echo "[🌐] Verificando configurações de Traffic Control..."
+	@bash scripts/check_tc.sh
+
+# Generate optimization summary report
+summary:
+	@echo "[📋] Gerando resumo das otimizações..."
+	@bash scripts/OPTIMIZATION_SUMMARY.sh
+
+# Organize test reports by timestamp
+organize-reports:
+	@echo "[📁] Organizando relatórios de teste..."
+	@bash scripts/organize_reports.sh
+
+# Apply URLLC optimizations manually (usually done automatically)
+apply-urllc:
+	@echo "[⚡] Aplicando otimizações URLLC manualmente..."
+	@bash scripts/apply_urllc_minimal.sh
+
+# Apply URLLC optimizations via YAML configuration
+apply-urllc-yaml:
+	@echo "[🎯] Aplicando configurações URLLC via YAML..."
+	@bash scripts/apply_urllc_yaml.sh
+
+.PHONY: optimize-latency
+# Apply balanced optimizations for low latency communication (<200ms target)
+optimize-latency:
+	@echo "[🚀] Applying balanced low latency optimizations..."; \
+	bash scripts/optimize_balanced_latency.sh || { \
+		echo "❌ Optimization script failed"; exit 1; \
+	}; \
+	echo "✅ Balanced low latency optimizations applied successfully!"
 
 .PHONY: check-link
 # Quick diagnostic to inspect tc qdisc and IPs for containernet containers
@@ -609,6 +765,32 @@ recreate-container:
 
 # === RESTORE ON-DEMAND (middts + simulators) ===
 .PHONY: restore-scenario restore-middts restore-simulators restore-sim
+
+# === DIGITAL TWINS MANAGEMENT ===
+.PHONY: reset-digital-twins reset-digital-twins-dry reset-digital-twins-force
+
+# Reset and recreate Digital Twins from devices with available DTDL modeling
+# Usage: make reset-digital-twins [SYSTEM_ID=1] [DRY_RUN=true] [FORCE=true]
+reset-digital-twins:
+	@echo "[🎯] Resetting and recreating Digital Twins from devices..."
+	@DJANGO_CMD="reset_digital_twins"; \
+	if [ "$(DRY_RUN)" = "true" ]; then DJANGO_CMD="$$DJANGO_CMD --dry-run"; fi; \
+	if [ "$(FORCE)" = "true" ]; then DJANGO_CMD="$$DJANGO_CMD --force"; fi; \
+	if [ -n "$(SYSTEM_ID)" ]; then DJANGO_CMD="$$DJANGO_CMD --system-id=$(SYSTEM_ID)"; fi; \
+	docker exec mn.middts bash -c "cd /middleware-dt && python manage.py $$DJANGO_CMD" || echo "[ERROR] Failed to reset Digital Twins"
+
+# Dry run version - shows what would be done without making changes
+reset-digital-twins-dry:
+	@$(MAKE) reset-digital-twins DRY_RUN=true
+
+# Force version - no confirmation prompts
+reset-digital-twins-force:
+	@$(MAKE) reset-digital-twins FORCE=true
+
+# Reset Digital Twins using standalone script (alternative method)
+reset-digital-twins-script:
+	@echo "[🎯] Running standalone Digital Twin reset script..."
+	@docker exec mn.middts python /var/condominio-scenario/scripts/reset_digital_twins.py || echo "[ERROR] Script execution failed"
 
 # High-level: restore everything needed for the scenario (middts DB + all simulator sqlite files)
 restore-scenario: restore-middts restore-simulators

@@ -131,8 +131,9 @@ def run_topo(num_sims=5):
 
     # Helper: link profile defaults (bandwidth Mbps, delay ms, loss %)
     # Profiles: urllc (low latency, lower bw), best_effort (balanced), eMBB (high bandwidth)
+    # URLLC profile optimized based on test results for <200ms latency goal
     PROFILE_LINK_PRESETS = {
-        'urllc': {'bw': 1000, 'delay': '0.2ms', 'loss': 0},
+        'urllc': {'bw': 3000, 'delay': '0.05ms', 'loss': 0},  # Optimized: 3Gbit, 0.05ms delay
         'eMBB': {'bw': 500, 'delay': '10ms', 'loss': 0.1},
         'best_effort': {'bw': 200, 'delay': '50ms', 'loss': 0.5}
     }
@@ -670,19 +671,27 @@ def run_topo(num_sims=5):
 
     # Hosts principais
     tb = safe_add_with_status('tb', 
-        dimage='tb-node-custom:urllc',
+        dimage='tb-node-custom:latest',  # Usar latest ao invés de urllc
         environment={
             'SPRING_DATASOURCE_URL': 'jdbc:postgresql://10.0.0.10:5432/thingsboard',
             'SPRING_DATASOURCE_USERNAME': POSTGRES_USER,
             'SPRING_DATASOURCE_PASSWORD': POSTGRES_PASSWORD,
             'TB_QUEUE_TYPE': 'in-memory',
             'INSTALL_TB': 'true',
-            'LOAD_DEMO': 'true'
+            'LOAD_DEMO': 'true',
+            # Adicionar configurações JAVA_OPTS para URLLC
+            'JAVA_OPTS': '-Xmx12g -Xms8g -XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:+DisableExplicitGC -XX:+UseStringDeduplication -XX:G1HeapRegionSize=16m -XX:G1NewSizePercent=40 -XX:G1MaxNewSizePercent=50',
+            'TB_QUEUE_RULE_ENGINE_THREAD_POOL_SIZE': '32',
+            'TB_QUEUE_TRANSPORT_THREAD_POOL_SIZE': '32',
+            'TB_QUEUE_JS_THREAD_POOL_SIZE': '16',
+            'TB_QUEUE_TRANSPORT_POLL_INTERVAL': '1',
+            'TB_QUEUE_RULE_ENGINE_POLL_INTERVAL': '1',
         },
         volumes=[
             'tb_assets:/data',
             'tb_logs:/var/log/thingsboard',
             f"{host_logs.get('tb')}:/var/log/thingsboard/manual_start.log",
+            f"{repo_root}/config/thingsboard-urllc.yml:/usr/share/thingsboard/conf/thingsboard.yml",
         ],
         ports=[8080, 1883],
         port_bindings={8080: 8080, 1883: 1883},
@@ -1525,6 +1534,29 @@ def run_topo(num_sims=5):
         info('[env][WARN] failed to inject container IPs into .env files\n')
     if QUIET:
         print(f"[NET] network started; hosts: {len(simuladores)+6} (including core services)")
+
+    # Apply URLLC optimizations automatically after network start
+    def apply_urllc_optimizations():
+        """Apply network and system optimizations for URLLC performance"""
+        try:
+            script_path = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')), 'scripts', 'apply_urllc_minimal.sh')
+            if os.path.exists(script_path):
+                info('[URLLC] Applying optimizations...\n')
+                result = subprocess.run(['bash', script_path], capture_output=True, text=True)
+                if result.returncode == 0:
+                    info('[URLLC] Optimizations applied successfully\n')
+                    # Aguardar um pouco para as otimizações serem aplicadas
+                    import time
+                    time.sleep(3)
+                else:
+                    info(f'[URLLC][WARN] Optimization script failed: {result.stderr}\n')
+            else:
+                info('[URLLC][WARN] Optimization script not found\n')
+        except Exception as e:
+            info(f'[URLLC][ERROR] Failed to apply optimizations: {e}\n')
+
+    # Apply optimizations after network is fully started
+    apply_urllc_optimizations()
 
     # Ensure Influx bucket exists and token is valid. This runs after network start
     # so container is reachable via docker-proxy on localhost.

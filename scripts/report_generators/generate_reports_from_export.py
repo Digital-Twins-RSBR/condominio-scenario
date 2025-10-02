@@ -21,7 +21,7 @@ import statistics
 import math
 
 AVAIL_INTERVAL = 10.0  # seconds
-DEADLINE_S = 0.2
+DEADLINE_S = 0.2  # Target deadline for latency goal (200ms)
 
 
 def iso_to_epoch(s):
@@ -74,7 +74,7 @@ def build_time_lists(rows):
     stop_ts = None
     for r in rows:
         meas = r.get('_measurement', '')
-        if meas != 'device_data':
+        if meas not in ['device_data', 'latency_measurement']:
             continue
         sensor = r.get('sensor', '')
         source = r.get('source', '')
@@ -97,7 +97,11 @@ def build_time_lists(rows):
                 num = None
         if field == 'sent_timestamp' and source == 'middts' and num is not None:
             middts_sent[sensor].append(num)
-        if field == 'received_timestamp' and source == 'simulator' and num is not None:
+        if field == 'received_timestamp' and source == 'simulator' and meas == 'latency_measurement' and num is not None:
+            # M2S: simulator received command from middleware  
+            sim_recv[sensor].append(num)
+        elif field == 'received_timestamp' and source == 'simulator_response' and num is not None:
+            # M2S approximation: use simulator_response timestamp as received_timestamp
             sim_recv[sensor].append(num)
         if field == 'sent_timestamp' and source == 'simulator' and num is not None:
             sim_sent[sensor].append(num)
