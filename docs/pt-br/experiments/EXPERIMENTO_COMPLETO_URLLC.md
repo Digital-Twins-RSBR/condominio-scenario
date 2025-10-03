@@ -248,6 +248,86 @@ make odte-monitored DURATION=120
 
 ### Aplicabilidade:
 - **Produção:** Configuração validada para ambiente real
+- **Pesquisa:** Metodologia aplicável a outros cenários URLLC
+- **Desenvolvimento:** Baseline para otimizações futuras
+
+## 📋 RESULTADOS CONSOLIDADOS E COMPARATIVOS
+
+### 📊 Histórico Completo dos Testes
+
+#### 🔴 Fase 1: Testes Iniciais (12 iterações)
+**Configuração:** 10 simuladores, configurações padrão  
+**Resultados:** Latências >200ms, CPU >400%
+
+#### 🟡 Fase 2: Otimização de Configurações
+**Perfis Testados:** test05_best_performance, rpc_ultra_aggressive, ultra_aggressive
+**Melhor resultado:** S2M 336.8ms, M2S 340.8ms, CPU 472%
+
+#### 🟢 Fase 3: Análise Avançada
+**Perfis:** extreme_performance, configurações JVM específicas
+**Conclusão:** Configurações não eram o gargalo
+
+#### 🏆 Fase 4: Descoberta do Gargalo (SUCESSO)
+**Estratégia:** Redução simuladores (10→5)
+**Resultado Final:** S2M 69.4ms, M2S 184.0ms, CPU 330%
+
+### 📈 Comparativo Detalhado Final
+
+| Métrica | Inicial (10 sims) | Final (5 sims) | Melhoria |
+|---------|-------------------|----------------|----------|
+| S2M Latência | 336.8ms | 69.4ms | **-79.4%** ✅ |
+| M2S Latência | 340.8ms | 184.0ms | **-46.0%** ✅ |
+| CPU TB Pico | 472% | 330% | **-30%** |
+| CPU TB Médio | 429% | 172% | **-60%** |
+| Status Meta | ❌ | ✅ | **ATINGIDA** |
+
+### 🔧 Configuração Vencedora Final
+
+```yaml
+# Perfil: reduced_load.yml
+CLIENT_SIDE_RPC_TIMEOUT: 150ms
+HTTP_REQUEST_TIMEOUT_MS: 750ms  
+SQL_TS_BATCH_MAX_DELAY_MS: 8ms
+JAVA_OPTS: "-Xms6g -Xmx8g -XX:+UseG1GC -XX:MaxGCPauseMillis=15ms"
+SIMULATORS_ACTIVE: 5  # CHAVE DO SUCESSO
+```
+
+### 🎯 Descobertas Principais Consolidadas
+
+#### 1. Gargalo Principal: Número de Simuladores
+- **10 simuladores:** Sobrecarga do ThingsBoard
+- **5 simuladores:** Performance ideal para URLLC
+- **Conclusão:** Hardware limitado pela carga, não configuração
+
+#### 2. Configurações Efetivas
+- **JVM moderado** (6-8GB) mais eficiente que extremo (16GB+)
+- **RPC timeout 150ms** adequado para 5 simuladores
+- **Batch delays reduzidos** (8ms/4ms) mantiveram eficiência
+
+#### 3. Estratégia Hot-Swap
+- **Não resetar topologia** permite testes rápidos
+- **Redução de simuladores** pode ser feita dinamicamente
+- **apply-profile** eficiente para configurações
+
+### 📁 Estrutura de Arquivos Criada
+
+#### Perfis de Configuração:
+```
+config/profiles/
+├── test05_best_performance.yml    # Configurações balanceadas
+├── rpc_ultra_aggressive.yml       # RPC agressivo 300ms  
+├── ultra_aggressive.yml           # Configurações máximas
+├── extreme_performance.yml        # JVM avançado 12GB
+└── reduced_load.yml               # ✅ VENCEDOR - 5 sims
+```
+
+#### Scripts de Análise:
+```
+scripts/
+├── analyze_advanced_configs.sh    # Análise opções 3&4
+├── monitor_during_test.sh         # Monitoramento tempo real
+└── apply_profile.sh              # Hot-swap configurações
+```
 - **Escalabilidade:** Base para testes com 6-8 simuladores
 - **Manutenção:** Procedimentos documentados
 - **Desenvolvimento:** Framework para futuras otimizações

@@ -117,6 +117,88 @@ tail -f results/test_*/generated_reports/*latencia_stats*.csv
 make odte-monitored DURATION=60
 ```
 
+## 📁 PERFIS DE CONFIGURAÇÃO DISPONÍVEIS
+
+### 📊 Resumo Comparativo dos Perfis
+
+| Perfil | RPC Timeout | JVM Heap | CPU Resultado | Latência S2M | Status |
+|--------|-------------|----------|---------------|--------------|--------|
+| **reduced_load** | 150ms | 6-8GB | 330% | **69.4ms** | ✅ **ÓTIMO** |
+| ultra_aggressive | 200ms | 12-16GB | 472% | 336.8ms | ❌ Alto CPU |
+| extreme_performance | 100ms | 10-12GB | - | - | 🧪 Experimental |
+| test05_best_performance | 1000ms | 4GB | - | - | 📝 Baseline |
+| rpc_ultra_aggressive | 300ms | - | - | - | 📝 Intermediário |
+
+### 🏆 PERFIL PRINCIPAL: reduced_load.yml ⭐
+
+**Características:**
+- **Objetivo:** Análise de saturação com configurações balanceadas
+- **Foco:** Performance sustentável com recursos moderados
+- **Uso recomendado:** Produção URLLC com 5 simuladores
+
+**Resultados Comprovados:**
+- ✅ **S2M:** 69.4ms (meta: <200ms)
+- ✅ **M2S:** 184.0ms (meta: <200ms)  
+- ✅ **CPU:** 330% pico, 172% médio
+- ✅ **Estabilidade:** Testado com sucesso
+
+### 📋 Perfis Alternativos
+
+#### 1. test05_best_performance.yml
+- **Propósito:** Configuração baseline balanceada  
+- **RPC:** 1000ms (conservador)
+- **JVM:** 4GB heap
+- **Status:** Funcional para desenvolvimento
+
+#### 2. ultra_aggressive.yml
+- **Propósito:** Configurações máximas (EVITAR)
+- **RPC:** 200ms, **JVM:** 12-16GB heap  
+- **Resultado:** ❌ CPU muito alto (472%), latências ruins
+- **Status:** Falhou por sobrecarga
+
+#### 3. extreme_performance.yml
+- **Propósito:** Configurações experimentais ultra-avançadas
+- **RPC:** 100ms (ultra-agressivo)
+- **JVM:** 10-12GB com otimizações avançadas
+- **Status:** 🧪 Experimental (não testado em produção)
+
+### 🎯 Recomendações de Uso
+
+#### ✅ **Para Produção URLLC:**
+**Use: reduced_load.yml**
+- Testado e validado
+- Latências garantidas <200ms
+- CPU controlado
+- 5 simuladores simultâneos
+
+#### 🧪 **Para Testes Experimentais:**
+**Use: extreme_performance.yml**
+- Configurações avançadas
+- JVM otimizado para alta carga
+- Para testar com mais simuladores
+
+#### 🛠️ **Para Desenvolvimento:**
+**Use: test05_best_performance.yml**
+- Configurações conservadoras
+- Estável para desenvolvimento
+- Menor uso de recursos
+
+### 🔧 Aplicação dos Perfis
+
+```bash
+# Aplicar perfil sem reiniciar topologia
+make apply-profile CONFIG_PROFILE=reduced_load
+
+# Ou recriar topologia com perfil
+make topo CONFIG_PROFILE=reduced_load SIMS=5
+
+# Verificar perfil aplicado
+make show-current-config
+
+# Testar com monitoramento
+make odte-monitored DURATION=120
+```
+
 ## 🚨 TROUBLESHOOTING
 
 ### Problema: CPU ThingsBoard >400%

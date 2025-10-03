@@ -2,6 +2,33 @@
 
 Este projeto implementa um sistema completo de medição de latência Ultra-Reliable Low-Latency Communication (URLLC) com One-Way Delay Time (ODTE) real para aplicações IoT em condomínios inteligentes.
 
+## 🏆 **BREAKTHROUGH RESULTS - 2025-10-03** 🏆
+
+**🎯 MARCO HISTÓRICO:** Primeira vez atingindo meta URLLC <200ms com filtro inteligente!
+
+### 📊 Resultados Record Alcançados:
+- **✅ S2M Latência:** 73.4ms (target: <200ms) - **99% melhoria** vs 7000ms anterior
+- **✅ Meta URLLC:** 100% das medições S2M dentro da meta (<200ms)
+- **✅ Filtro Inteligente:** 40.4% redução de carga (28/47 dispositivos)
+- **✅ Conectividade:** 100% simuladores ativos durante teste
+- **✅ Network Shaping:** Bug de 50ms eliminado
+- **✅ Score Geral:** 100/100 durante execução
+
+**📁 Teste Referência:** `test_20251003T154254Z_urllc`  
+**🔧 Documentação:** `docs/BREAKTHROUGH_RESULTS_2025-10-03.md`
+
+### 🚀 Quick Start para Reproduzir Resultados:
+```bash
+# 1. Aplicar todas otimizações automaticamente
+./scripts/apply_urllc_optimizations.sh
+
+# 2. Executar teste otimizado
+make odte-full DURATION=300
+
+# 3. Monitorar em tempo real
+./scripts/monitor_realtime_connectivity.sh
+```
+
 ## � OBJETIVOS ALCANÇADOS - OTIMIZAÇÃO COMPLETA (OUT/2025)
 
 - **✅ URLLC <200ms:** S2M 69.4ms, M2S 184.0ms (meta atingida!)

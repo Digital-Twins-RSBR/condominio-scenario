@@ -7,27 +7,63 @@
 - ✅ **CPU: 330%** (controlado)
 - ✅ **Throughput: 62.1 msg/s** (alta performance)
 
-## 📁 ESTRUTURA DA DOCUMENTAÇÃO EM PORTUGUÊS
+## 📁 ESTRUTURA DA DOCUMENTAÇÃO OTIMIZADA
 
 ### **🧪 EXPERIMENTOS**
-```
-experiments/
-├── EXPERIMENTO_COMPLETO_URLLC.md                # 📖 Metodologia científica completa
-└── RELATORIO_COMPLETO_URLLC_OTIMIZACAO.md       # 📋 Análise técnica detalhada
-```
-
 #### **📖 EXPERIMENTO_COMPLETO_URLLC.md**
-- **Escopo:** Documentação científica completa do experimento
-- **Conteúdo:** 4 fases experimentais, metodologia, descobertas
-- **Público:** Pesquisadores, desenvolvedores técnicos
-- **Destaques:**
-  - Metodologia iterativa com hot-swap
-  - Descoberta do gargalo real (número de simuladores)
-  - Lições aprendidas e reprodutibilidade
+- **Metodologia científica completa:** 4 fases experimentais
+- **Descoberta principal:** Número de simuladores = gargalo crítico
+- **Resultados consolidados:** Histórico, comparativos e lições aprendidas
+- **Reprodutibilidade:** Procedimentos validados e testados
 
-#### **📋 RELATORIO_COMPLETO_URLLC_OTIMIZACAO.md**
-- **Escopo:** Análise técnica detalhada das otimizações
-- **Conteúdo:** Comparações, evoluções, resultados
+### **� DOCUMENTAÇÃO TÉCNICA**
+#### **🌐 TOPOLOGIA_ARQUITETURA_SISTEMA.md**
+- **Arquitetura completa:** Django middleware, ThingsBoard, simuladores
+- **Componentes detalhados:** APIs, WebSockets, integração InfluxDB
+- **Monitoramento de rede:** RTT, throughput, packet loss, métricas ODTE
+
+#### **📊 RELATORIO_INDICADORES_ODTE.md**
+- **Indicadores URLLC:** S2M, M2S, Availability, Reliability, Throughput
+- **Cálculos detalhados:** Fórmulas, thresholds, correlações
+- **Análise estatística:** Distribuições, percentis, classificações
+
+#### **🛠️ GUIA_CONFIGURACOES_URLLC.md**
+- **Procedimentos operacionais:** Hot-swap, monitoramento, troubleshooting
+- **Perfis consolidados:** reduced_load, ultra_aggressive, experimental
+- **Comandos práticos:** Aplicação, verificação, análise de saúde
+
+## 🚀 NAVEGAÇÃO RÁPIDA
+
+### **Para Pesquisadores:**
+→ `experiments/EXPERIMENTO_COMPLETO_URLLC.md`
+
+### **Para Arquitetos:**
+→ `technical/TOPOLOGIA_ARQUITETURA_SISTEMA.md`
+
+### **Para Analistas de Performance:**
+→ `technical/RELATORIO_INDICADORES_ODTE.md`
+
+### **Para Operadores:**
+→ `technical/GUIA_CONFIGURACOES_URLLC.md`
+
+---
+
+## 🎯 CONFIGURAÇÃO ÓTIMA IDENTIFICADA
+
+### Sistema Vencedor:
+- **Perfil:** `reduced_load`
+- **Simuladores:** 5 ativos
+- **Descoberta:** Hardware limitado pela carga, não configuração
+- **Status:** ✅ Produção validada
+
+### Aplicação Rápida:
+```bash
+# Aplicar configuração ótima
+make apply-profile CONFIG_PROFILE=reduced_load
+
+# Teste com monitoramento
+make odte-monitored DURATION=120
+```
 - **Público:** Engenheiros, analistas técnicos
 
 ### **🔧 DOCUMENTAÇÃO TÉCNICA**

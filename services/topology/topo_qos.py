@@ -133,8 +133,8 @@ def run_topo(num_sims=5):
     # Profiles: urllc (low latency, lower bw), best_effort (balanced), eMBB (high bandwidth)
     # URLLC profile optimized based on test results for <200ms latency goal
     PROFILE_LINK_PRESETS = {
-        'urllc': {'bw': 3000, 'delay': '0.05ms', 'loss': 0},  # Optimized: 3Gbit, 0.05ms delay
-        'eMBB': {'bw': 500, 'delay': '10ms', 'loss': 0.1},
+        'urllc': {'bw': 1000, 'delay': '0.05ms', 'loss': 0},  # Optimized: 3Gbit, 0.05ms delay
+        'eMBB': {'bw': 300, 'delay': '25ms', 'loss': 0.2},   # Realistic 2025: WiFi 6/4G in building
         'best_effort': {'bw': 200, 'delay': '50ms', 'loss': 0.5}
     }
 

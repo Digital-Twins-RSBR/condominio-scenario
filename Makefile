@@ -6,7 +6,9 @@ MIDDTS_IMAGE = middts:latest
 MIDDTS_CUSTOM_IMAGE = middts-custom:latest
 IOT_SIM_IMAGE = iot_simulator:latest
 TB_IMAGE = tb-node-custom
-PG_IMAGE = postgrestopo-rpc-ultra:
+PG_IMAGE = postgres
+
+topo-rpc-ultra:
 	@$(MAKE) topo PROFILE=urllc CONFIG_PROFILE=ultra_aggressive
 
 network-opt:
@@ -306,7 +308,7 @@ topo:
 	echo "[topo] PROFILE=$$profile"; \
 	sh scripts/run_topo.sh "$$profile"
 
-.PHONY: urllc best_effort eMBB test05-best rpc-ultra network-opt baseline
+.PHONY: urllc best_effort eMBB test05-best rpc-ultra reduced-load network-opt baseline apply-profile apply-profile-restart
 
 # Convenience targets: run topo with a predefined profile
 urllc:
@@ -325,6 +327,9 @@ test05-best:
 
 rpc-ultra:
 	@$(MAKE) topo PROFILE=urllc CONFIG_PROFILE=rpc_ultra_aggressive
+
+reduced-load:
+	@$(MAKE) topo PROFILE=urllc CONFIG_PROFILE=reduced_load
 
 network-opt:
 	@$(MAKE) topo PROFILE=urllc CONFIG_PROFILE=network_optimized
