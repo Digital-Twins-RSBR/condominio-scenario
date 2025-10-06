@@ -109,7 +109,7 @@ apply_topo_profile() {
       BW=1000; DELAY="0.2ms"; LOSS=0
       ;;
     eMBB|embb)
-      BW=500; DELAY="10ms"; LOSS=0.1
+      BW=300; DELAY="25ms"; LOSS=0.2
       ;;
     *)
       BW=200; DELAY="50ms"; LOSS=0.5
@@ -118,9 +118,9 @@ apply_topo_profile() {
   # iterate mn.* containers and apply tc on eth0 where present
   docker ps --format '{{.Names}}' | grep '^mn\.' | while read -r cname; do
     [ -z "$cname" ] && continue
-    # skip core services: do not shape influx/thingsboard/middts/neo4j containers
+    # skip core services: do not shape influx/thingsboard/middts/neo4j/database containers
     case "$cname" in
-      *influx*|*tb*|*thingsboard*|*middts*|*middleware*|*neo4j*|*parser*)
+      *influx*|*tb*|*thingsboard*|*middts*|*middleware*|*neo4j*|*parser*|*db*|*postgres*)
         log "Skipping shaping for core container $cname to keep core links at max"
         continue
         ;;

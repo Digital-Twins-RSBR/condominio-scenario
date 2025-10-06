@@ -61,7 +61,7 @@ if docker ps --format '{{.Names}}' | grep -q "mn.tb"; then
     CONNECTED_SIMS=0
     for sim in mn.sim_001 mn.sim_002 mn.sim_003 mn.sim_004 mn.sim_005; do
         if docker ps --format '{{.Names}}' | grep -q "^$sim$"; then
-            PING_RESULT=$(docker exec $sim ping -c 1 -W 1 10.0.0.11 2>/dev/null | grep "1 received" | wc -l || echo "0")
+            PING_RESULT=$(docker exec $sim ping -c 1 -W 1 10.0.0.2 2>/dev/null | grep "1 received" | wc -l || echo "0")
             if [ "$PING_RESULT" -gt "0" ]; then
                 CONNECTED_SIMS=$((CONNECTED_SIMS + 1))
             fi

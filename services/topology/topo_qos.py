@@ -24,7 +24,7 @@ def cleanup_containers():
     subprocess.run("docker volume rm tb_assets tb_logs influx_logs neo4j_logs parser_logs || true", shell=True)
 
 
-def wait_for_pg_tcp(container, timeout=60, hosts=("10.10.2.10", "10.0.0.10"), pg_user='postgres'):
+def wait_for_pg_tcp(container, timeout=60, hosts=("10.0.1.10", "10.0.0.10"), pg_user='postgres'):
     info("🔍 Verificando inicialização do PostgreSQL nos hosts alvo...\n")
     for i in range(1, timeout+1):
         accepted = False
@@ -65,7 +65,7 @@ def tb_has_any_table(pg_container, retries=6, delay=2, min_tables=5, pg_user='po
         time.sleep(delay)
     return False
 
-def wait_for_thingsboard(host='10.0.0.11', port=8080, timeout=180, interval=3):
+def wait_for_thingsboard(host='10.0.0.2', port=8080, timeout=180, interval=3):
     """Wait until ThingsBoard HTTP endpoint responds (not necessarily 200).
     We consider TB ready when the HTTP endpoint returns any non-zero status code
     (curl returns '000' when it couldn't connect at all)."""
@@ -133,13 +133,13 @@ def run_topo(num_sims=5):
     # Profiles: urllc (low latency, lower bw), best_effort (balanced), eMBB (high bandwidth)
     # URLLC profile optimized based on test results for <200ms latency goal
     PROFILE_LINK_PRESETS = {
-        'urllc': {'bw': 1000, 'delay': '0.05ms', 'loss': 0},  # Optimized: 3Gbit, 0.05ms delay
-        'eMBB': {'bw': 300, 'delay': '25ms', 'loss': 0.2},   # Realistic 2025: WiFi 6/4G in building
+        'urllc': {'bw': 1000, 'delay': '0.05ms', 'loss': 0},
+        'eMBB': {'bw': 300, 'delay': '25ms', 'loss': 0.2}, 
         'best_effort': {'bw': 200, 'delay': '50ms', 'loss': 0.5}
     }
 
     # Determine profile from env TOPO_PROFILE or default to 'best_effort'
-    topo_profile = os.environ.get('TOPO_PROFILE') or os.environ.get('PROFILE') or 'best_effort'
+    topo_profile = os.environ.get('TOPO_PROFILE') or os.environ.get('PROFILE') or 'urllc'
     topo_profile = topo_profile if topo_profile in PROFILE_LINK_PRESETS else topo_profile.lower()
     if topo_profile not in PROFILE_LINK_PRESETS:
         # try common case-insensitive names
@@ -147,7 +147,7 @@ def run_topo(num_sims=5):
             if k.lower() == str(topo_profile).lower():
                 topo_profile = k
                 break
-    profile_params = PROFILE_LINK_PRESETS.get(topo_profile, PROFILE_LINK_PRESETS['best_effort'])
+    profile_params = PROFILE_LINK_PRESETS.get(topo_profile, PROFILE_LINK_PRESETS['urllc'])
 
     def add_link(a, b, **kwargs):
         """Wrapper around net.addLink that applies TCLink with profile defaults unless overridden."""
@@ -277,7 +277,7 @@ def run_topo(num_sims=5):
     if len(INFLUXDB_INIT_PASSWORD) < 8:
         INFLUXDB_INIT_PASSWORD = INFLUXDB_INIT_PASSWORD.ljust(8, '_')
 
-    POSTGRES_HOST = '10.10.2.10'
+    POSTGRES_HOST = '10.0.1.10'
     POSTGRES_PORT = '5432'
     POSTGRES_USER = 'postgres'
     # Default to previous behavior ('tb') to avoid mismatches with existing DB volumes
@@ -315,6 +315,7 @@ def run_topo(num_sims=5):
     # Serviços centrais
     pg = safe_add_with_status('db',
         dimage='postgres:13-tools',
+        ip='10.0.0.10',
         environment={
             'POSTGRES_DB': 'thingsboard',
             'POSTGRES_USER': POSTGRES_USER,
@@ -333,7 +334,7 @@ def run_topo(num_sims=5):
         dimage=os.getenv('INFLUXDB_IMAGE','influxdb:2.7'),
         # use the daemon executable expected by official images
         dcmd='influxd',
-        ip='10.10.2.20/24',
+        ip='10.0.1.20',
         ports=[8086],
         port_bindings={8086: 8086},
         environment={
@@ -359,7 +360,7 @@ def run_topo(num_sims=5):
         # server listen address line is present but avoid duplicating it
         # when the data volume already contains neo4j.conf (idempotent).
         dcmd="/bin/bash -lc 'grep -qxF \"server.default_listen_address=0.0.0.0\" /var/lib/neo4j/conf/neo4j.conf || echo \"server.default_listen_address=0.0.0.0\" >> /var/lib/neo4j/conf/neo4j.conf || true; /var/lib/neo4j/bin/neo4j console'",
-        ip='10.10.2.30/24',
+        ip='10.0.1.30',
         ports=[7474, 7687],
         port_bindings={7474: 7474, 7687: 7687},
         # Prefer middleware .env value for NEO4J_AUTH when available, otherwise use a safe default
@@ -659,7 +660,6 @@ def run_topo(num_sims=5):
     except Exception:
         # non-fatal; continue
         pass
-    # ...existing code...
 
     # Switches para cada domínio (usar nomes numéricos: s1, s2, ...)
     s1 = net.addSwitch('s1')  # tb
@@ -695,7 +695,7 @@ def run_topo(num_sims=5):
         ],
         ports=[8080, 1883],
         port_bindings={8080: 8080, 1883: 1883},
-        ip='10.0.0.11/24',
+        ip='10.0.0.2',
         dcmd='/bin/bash',
         privileged=True
     )
@@ -715,8 +715,8 @@ def run_topo(num_sims=5):
     # Usar IP da interface compartilhada com middts (db-eth1)
     # Banco separado para o middleware (não reutilizar o DB do ThingsBoard)
     POSTGRES_DB = 'middts'
-    NEO4J_URL = 'bolt://10.10.2.30:7687'
-    INFLUXDB_HOST = '10.10.2.20'
+    NEO4J_URL = 'bolt://10.0.1.30:7687'
+    INFLUXDB_HOST = '10.0.1.20'
     # Load INFLUXDB_TOKEN from repository .env if present so created containers
     # (middts and simulators) receive the same token the operator configured.
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -941,6 +941,7 @@ def run_topo(num_sims=5):
         dimage=os.getenv('MIDDTS_IMAGE', 'middts-custom:latest'),
         dcmd="/entrypoint.sh",
         # dcmd="/bin/bash",
+        ip='10.0.1.2',
         ports=[8000],
         port_bindings={8000: 8000},
         environment={
@@ -1105,8 +1106,9 @@ def run_topo(num_sims=5):
                 dimage=os.getenv('SIM_IMAGE','iot_simulator:latest'),
                 environment=env,
                 volumes=vols,
+                ip=f'10.0.{10+i}.2',
                 ports=[8001],
-                port_bindings={8001:8001},
+                port_bindings={8001: 8001},
                 privileged=True,
                 **({'entrypoint': entrypoint_arg} if entrypoint_arg else {})
             )
@@ -1116,6 +1118,7 @@ def run_topo(num_sims=5):
                 dimage=os.getenv('SIM_IMAGE','iot_simulator:latest'),
                 environment=env,
                 volumes=vols,
+                ip=f'10.0.{10+i}.2',
                 privileged=True,
                 **({'entrypoint': entrypoint_arg} if entrypoint_arg else {})
             )
@@ -1155,79 +1158,205 @@ def run_topo(num_sims=5):
     # Simulators should reach Influx without profile shaping
     add_link(s_sim, influxdb, no_profile=True)
 
-    # Serviços centrais ligados a todos os switches necessários
-    # Postgres: todos precisam menos os simuladores que usam sqlite3
-    # Ensure ThingsBoard<->PG and middts<->PG links are local (no shaping)
+    # Serviços centrais ligados aos switches necessários
+    # PostgreSQL: apenas ThingsBoard (s1) e Middleware (s2) - simuladores usam SQLite
     add_link(pg, s1, no_profile=True)
     add_link(pg, s2, no_profile=True)
-    # Influx: middts e simuladores
-    # Ensure switch s1 (ThingsBoard) can also reach InfluxDB
-    # Ensure Influx <-> middts and Influx <-> simulators are local (no shaping)
+    # InfluxDB: todos os switches (middleware + simuladores precisam)
     add_link(influxdb, s1, no_profile=True)
     add_link(influxdb, s2, no_profile=True)
     for s_sim in sim_switches:
         add_link(influxdb, s_sim, no_profile=True)
-    # Neo4j e parser: só middts
+    # Neo4j: apenas middleware (s2)
     add_link(neo4j, s2)
 
     # === IPs e rotas ===
     info("[net] Configurando IPs e rotas\n")
     # IPs para switches:
-    # s1: 10.10.1.0/24 (tb)
-    # s2: 10.10.2.0/24 (middts)
-    # s3...: 10.10.(10+i).0/24 (simuladores)
+    # s1: 10.0.0.0/24 (tb)
+    # s2: 10.0.1.0/24 (middts)
+    # s3...: 10.0.(10+i).0/24 (simuladores)
 
     # tb
     tb.cmd("ip addr flush dev tb-eth0 scope global || true")
-    tb.cmd("ip addr add 10.10.1.2/24 dev tb-eth0 || true")
+    tb.cmd("ip addr add 10.0.0.2/24 dev tb-eth0 || true")
     tb.cmd("ip link set tb-eth0 up")
     tb.cmd("ip route add default dev tb-eth0 || true")
 
     # middts
     middts.cmd("ip addr flush dev middts-eth0 scope global || true")
-    middts.cmd("ip addr add 10.10.2.2/24 dev middts-eth0 || true")
+    middts.cmd("ip addr add 10.0.1.2/24 dev middts-eth0 || true")
     middts.cmd("ip link set middts-eth0 up")
     middts.cmd("ip route add default dev middts-eth0 || true")
 
     # simuladores
     for idx, sim in enumerate(simuladores, 1):
         sim_if = f"sim_{idx:03d}-eth0"
-        sim_ip = f"10.10.{10+idx}.2/24"
+        sim_ip = f"10.0.{10+idx}.2/24"
         sim.cmd(f"ip addr flush dev {sim_if} scope global || true")
         sim.cmd(f"ip addr add {sim_ip} dev {sim_if} || true")
         sim.cmd(f"ip link set {sim_if} up")
         sim.cmd(f"ip route add default dev {sim_if} || true")
 
-    # Serviços centrais: cada interface em cada switch recebe IP na sub-rede correspondente
-    # Postgres
-    pg_ifaces = ["db-eth0", "db-eth1"] + [f"db-eth{2+i}" for i in range(len(sim_switches))]
-    pg_ips = ["10.10.1.10/24", "10.10.2.10/24"] + [f"10.10.{10+i+1}.10/24" for i in range(len(sim_switches))]
+    # Serviços centrais: configuração de interfaces
+    # PostgreSQL: apenas s1 (ThingsBoard) e s2 (Middleware) - simuladores usam SQLite
+    pg_ifaces = ["db-eth0", "db-eth1"]
+    pg_ips = ["10.0.0.10/24", "10.0.1.10/24"]
     for iface, ip in zip(pg_ifaces, pg_ips):
         pg.cmd(f"ip addr flush dev {iface} scope global || true")
         pg.cmd(f"ip addr add {ip} dev {iface} || true")
         pg.cmd(f"ip link set {iface} up")
-        pg.cmd(f"ip route add 10.10.0.0/16 dev {iface} || true")
+        pg.cmd(f"ip route add 10.0.0.0/16 dev {iface} || true")
 
-    # InfluxDB
+    # InfluxDB: s2 (middleware) + todos os switches de simuladores
     influx_ifaces = ["influxdb-eth0"] + [f"influxdb-eth{i+1}" for i in range(len(sim_switches))]
-    influx_ips = ["10.10.2.20/24"] + [f"10.10.{10+i+1}.20/24" for i in range(len(sim_switches))]
+    influx_ips = ["10.0.1.20/24"] + [f"10.0.{10+i+1}.20/24" for i in range(len(sim_switches))]
     for iface, ip in zip(influx_ifaces, influx_ips):
         influxdb.cmd(f"ip addr flush dev {iface} scope global || true")
         influxdb.cmd(f"ip addr add {ip} dev {iface} || true")
         influxdb.cmd(f"ip link set {iface} up")
-        influxdb.cmd(f"ip route add 10.10.0.0/16 dev {iface} || true")
+        influxdb.cmd(f"ip route add 10.0.0.0/16 dev {iface} || true")
 
     # Neo4j
     neo4j.cmd("ip addr flush dev neo4j-eth0 scope global || true")
-    neo4j.cmd("ip addr add 10.10.2.30/24 dev neo4j-eth0 || true")
+    neo4j.cmd("ip addr add 10.0.1.30/24 dev neo4j-eth0 || true")
     neo4j.cmd("ip link set neo4j-eth0 up")
-    neo4j.cmd("ip route add 10.10.0.0/16 dev neo4j-eth0 || true")
+    neo4j.cmd("ip route add 10.0.0.0/16 dev neo4j-eth0 || true")
 
     # Parser runs outside the Containernet topology; no in-topology IPs configured.
 
 
     # Agora sim, inicia a rede
     net.start()
+
+    # Restore Docker port forwarding rules that may be overridden by Mininet
+    def restore_docker_port_forwarding():
+        """Check external access and setup socat fallback if needed"""
+        try:
+            import subprocess
+            import json
+            import socket
+            
+            # Wait a bit for containers to be fully ready
+            time.sleep(3)
+            
+            info("[net] Testing external access to services...\n")
+            
+            # Test external access function
+            def test_external_access(port, timeout=5):
+                """Test if a port is accessible from external interface"""
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(timeout)
+                    # Test on all external interfaces
+                    for test_ip in ['0.0.0.0', '10.22.10.102', '127.0.0.1']:
+                        try:
+                            result = sock.connect_ex((test_ip, port))
+                            if result == 0:
+                                sock.close()
+                                return True
+                        except:
+                            continue
+                    sock.close()
+                    return False
+                except:
+                    return False
+            
+            # Get container IPs for socat fallback
+            def get_container_ip(container_name):
+                try:
+                    result = subprocess.run(['docker', 'inspect', container_name], 
+                                          capture_output=True, text=True)
+                    if result.returncode == 0:
+                        data = json.loads(result.stdout)[0]
+                        return data['NetworkSettings']['IPAddress']
+                except:
+                    pass
+                return None
+            
+            # Kill any existing socat processes
+            subprocess.run(['pkill', '-f', 'socat.*900'], check=False)
+            
+            services_to_test = {
+                'middleware': {'container': 'mn.middts', 'port': 8000, 'fallback_port': 9000},
+                'simulator': {'container': 'mn.sim_001', 'port': 8001, 'fallback_port': 9001}, 
+                'thingsboard': {'container': 'mn.tb', 'port': 8080, 'fallback_port': 9080}
+            }
+            
+            fallback_needed = []
+            
+            # Test each service
+            for service_name, config in services_to_test.items():
+                port = config['port']
+                if test_external_access(port):
+                    info(f"[net] ✅ {service_name} port {port} - external access OK\n")
+                else:
+                    info(f"[net] ❌ {service_name} port {port} - external access FAILED, will setup socat fallback\n")
+                    fallback_needed.append(config)
+            
+            # Setup socat fallback for failed services
+            if fallback_needed:
+                info(f"[net] Setting up socat fallback for {len(fallback_needed)} services...\n")
+                
+                for config in fallback_needed:
+                    container_ip = get_container_ip(config['container'])
+                    if container_ip:
+                        fallback_port = config['fallback_port']
+                        original_port = config['port']
+                        
+                        # Start socat proxy
+                        cmd = ['socat', 
+                               f'TCP-LISTEN:{fallback_port},bind=0.0.0.0,fork,reuseaddr', 
+                               f'TCP:{container_ip}:{original_port}']
+                        
+                        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        info(f"[net] 🔄 Started socat proxy: external {fallback_port} -> {container_ip}:{original_port}\n")
+                        
+                        # Brief test of fallback
+                        time.sleep(1)
+                        if test_external_access(fallback_port, timeout=2):
+                            info(f"[net] ✅ Fallback port {fallback_port} working!\n")
+                        else:
+                            info(f"[net] ⚠️  Fallback port {fallback_port} test failed\n")
+                
+                # Summary
+                info(f"\n[net] 📋 ACCESS SUMMARY:\n")
+                for service_name, config in services_to_test.items():
+                    if config in fallback_needed:
+                        info(f"[net]   {service_name}: ❌ port {config['port']} -> 🔄 fallback port {config['fallback_port']}\n")
+                    else:
+                        info(f"[net]   {service_name}: ✅ port {config['port']} (direct access)\n")
+                        
+            else:
+                info("[net] ✅ All services have working external access - no fallback needed\n")
+                        
+        except Exception as e:
+            info(f"[net][WARN] Port forwarding check failed: {e}\n")
+            # Fallback: setup socat for all services anyway
+            try:
+                info("[net] Setting up socat as fallback due to check failure...\n")
+                subprocess.run(['pkill', '-f', 'socat.*900'], check=False)
+                
+                services = [
+                    ('mn.middts', 8000, 9000),
+                    ('mn.sim_001', 8001, 9001),
+                    ('mn.tb', 8080, 9080)
+                ]
+                
+                for container, orig_port, fallback_port in services:
+                    result = subprocess.run(['docker', 'inspect', container], 
+                                          capture_output=True, text=True)
+                    if result.returncode == 0:
+                        data = json.loads(result.stdout)[0]
+                        container_ip = data['NetworkSettings']['IPAddress']
+                        if container_ip:
+                            cmd = ['socat', 
+                                   f'TCP-LISTEN:{fallback_port},bind=0.0.0.0,fork,reuseaddr', 
+                                   f'TCP:{container_ip}:{orig_port}']
+                            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            info(f"[net] Emergency socat: {fallback_port} -> {container_ip}:{orig_port}\n")
+            except Exception as e2:
+                info(f"[net][WARN] Emergency socat setup failed: {e2}\n")
 
     # Ensure the underlying Docker containers are Running before we
     # execute commands that expect the network interfaces to be present.
@@ -1246,6 +1375,10 @@ def run_topo(num_sims=5):
                 return
             # short safety pause
             time.sleep(0.1)
+            
+        # Restore Docker port forwarding after all containers are running
+        restore_docker_port_forwarding()
+        
     except Exception:
         # non-fatal: proceed and let later checks catch issues
         pass
@@ -1323,7 +1456,7 @@ def run_topo(num_sims=5):
     # inside their network namespace. This avoids the need for manual nsenter
     # when moveIntf or net.start() leaves the container-side veth down or
     # missing the assigned IP (race observed in practice).
-    def ensure_container_iface_up(name, iface, ip_cidr, route_cidr='10.10.0.0/16', retries=6, delay=0.5):
+    def ensure_container_iface_up(name, iface, ip_cidr, route_cidr='10.0.0.0/16', retries=6, delay=0.5):
         """Idempotently ensure that container mn.<name> has `iface` UP and `ip_cidr` assigned.
         Uses nsenter against the container PID obtained via _get_container_pid.
         Returns True if successful or already configured, False otherwise.
@@ -1359,22 +1492,22 @@ def run_topo(num_sims=5):
     try:
         # Try to ensure the Influx and Neo4j interfaces are configured inside their
         # container network namespaces. This fixes the common case where simulators
-        # cannot reach Influx at 10.10.2.20 because the container-side veth was left
+        # cannot reach Influx at 10.0.1.20 because the container-side veth was left
         # down or without the IP assigned.
-        ensure_container_iface_up('influxdb', 'influxdb-eth0', '10.10.2.20/24')
+        ensure_container_iface_up('influxdb', 'influxdb-eth0', '10.0.1.20/24')
         # Ensure the Influx container has an explicit route back to the simulator
-        # fabric so replies (SYN-ACK) go out via influxdb-eth0 with the 10.10.2.20
+        # fabric so replies (SYN-ACK) go out via influxdb-eth0 with the 10.0.1.20
         # source address. This prevents asymmetric routing where the kernel would
         # send replies out via the docker bridge (172.17.x) and the TCP handshake
         # would never complete.
         ensure_container_route('influxdb', '10.0.0.0/24', 'influxdb-eth0')
-        ensure_container_iface_up('neo4j', 'neo4j-eth0', '10.10.2.30/24')
+        ensure_container_iface_up('neo4j', 'neo4j-eth0', '10.0.1.30/24')
     except Exception:
         # non-fatal; continue
         pass
 
-    # Ensure simulators have a route to the 10.10.0.0/16 fabric via their sim_xxx-eth0
-    # interface so they can reach Influx (10.10.2.20) even if Docker's default route
+    # Ensure simulators have a route to the 10.0.0.0/16 fabric via their sim_xxx-eth0
+    # interface so they can reach Influx (10.0.1.20) even if Docker's default route
     # points at the bridge (172.17.x.x). This is idempotent and will be applied
     # on each topology start.
     def ensure_container_route(name, dest_cidr, dev, src=None, retries=6, delay=0.5):
@@ -1419,10 +1552,10 @@ def run_topo(num_sims=5):
         for i in range(1, num_sims + 1):
             sim_name = f"sim_{i:03d}"
             sim_iface = f"{sim_name}-eth0"
-            ensure_container_route(sim_name, '10.10.0.0/16', sim_iface)
+            ensure_container_route(sim_name, '10.0.0.0/16', sim_iface)
             # Also add a specific host route for the Influx address so the kernel
-            # selects the simulator's 10.0.0.x source when connecting to 10.10.2.20.
-            ensure_container_route(sim_name, '10.10.2.20/32', sim_iface)
+            # selects the simulator's 10.0.x.x source when connecting to 10.0.1.20.
+            ensure_container_route(sim_name, '10.0.1.20/32', sim_iface)
     except Exception:
         pass
 
@@ -1448,11 +1581,11 @@ def run_topo(num_sims=5):
             except Exception:
                 return None
 
-        influx_ip = container_ip(influxdb) or os.getenv('INFLUXDB_HOST', '10.10.2.20')
-        neo4j_ip = container_ip(neo4j) or os.getenv('NEO4J_HOST', '10.10.2.30')
+        influx_ip = container_ip(influxdb) or os.getenv('INFLUXDB_HOST', '10.0.1.20')
+        neo4j_ip = container_ip(neo4j) or os.getenv('NEO4J_HOST', '10.0.1.30')
     except Exception:
-        influx_ip = os.getenv('INFLUXDB_HOST', '10.10.2.20')
-        neo4j_ip = os.getenv('NEO4J_HOST', '10.10.2.30')
+        influx_ip = os.getenv('INFLUXDB_HOST', '10.0.1.20')
+        neo4j_ip = os.getenv('NEO4J_HOST', '10.0.1.30')
 
     # Write these IPs into middleware and simulator .env files (idempotent)
     try:
@@ -1673,55 +1806,25 @@ def run_topo(num_sims=5):
     except Exception:
         pass
 
-    # Pós-configuração de IPs nas interfaces (garante IP correto)
-    info("[net] Configurando IPs nas interfaces dos containers\n")
-    pg.cmd("ip addr flush dev db-eth0 scope global || true")
-    pg.cmd("ip addr add 10.0.0.10/24 dev db-eth0 || true")
-    pg.cmd("ip link set db-eth0 up")
-    pg.cmd("ip route add 10.0.0.0/24 dev db-eth0 || true")
-    # Garante IP para rede middts no segundo interface (db-eth1) -> 10.10.2.10
-    pg.cmd("ip addr add 10.10.2.10/24 dev db-eth1 || true")
-    pg.cmd("ip link set db-eth1 up || true")
-
-    tb.cmd("ip addr flush dev tb-eth0 scope global || true")
-    tb.cmd("ip addr add 10.0.0.11/24 dev tb-eth0 || true")
-    tb.cmd("ip link set tb-eth0 up")
-    tb.cmd("ip route add 10.0.0.0/24 dev tb-eth0 || true")
-
-    middts.cmd("ip addr flush dev middts-eth0 scope global || true")
-    middts.cmd("ip addr add 10.0.0.12/24 dev middts-eth0 || true")
-    middts.cmd("ip link set middts-eth0 up")
-    middts.cmd("ip route add 10.0.0.0/24 dev middts-eth0 || true")
-    # Adiciona também endereço na subrede funcional middts (10.10.2.0/24) esperado pelo .env
-    middts.cmd("ip addr add 10.10.2.2/24 dev middts-eth0 || true")
-
-    for idx, sim in enumerate(simuladores, 1):
-        sim_if = f"sim_{idx:03d}-eth0"
-        sim_ip = f"10.0.0.{20+idx}/24"
-        sim.cmd(f"ip addr flush dev {sim_if} scope global || true")
-        sim.cmd(f"ip addr add {sim_ip} dev {sim_if} || true")
-        sim.cmd(f"ip link set {sim_if} up")
-        sim.cmd(f"ip route add 10.0.0.0/24 dev {sim_if} || true")
-
-    # Re-ensure Influx interface and routes and per-simulator routes here to
-    # mitigate Containernet moveIntf races where veth peers might be briefly
-    # down or missing IP/route assignments. This block is idempotent and will
-    # attempt several times via the helpers defined above.
+    # SEÇÃO REMOVIDA: Pós-configuração estava sobrescrevendo IPs corretos 10.0.x.x
+    # As configurações corretas já foram aplicadas anteriormente na seção "=== IPs e rotas ==="
+    info("[net] IPs já configurados corretamente na seção anterior\n")
+    
+    # Manter apenas configurações essenciais do InfluxDB
     try:
-        # ensure influx iface + route back to simulator fabric
-        ensure_container_iface_up('influxdb', 'influxdb-eth0', '10.10.2.20/24')
-        ensure_container_route('influxdb', '10.0.0.0/24', 'influxdb-eth0')
+        # ensure influx iface + route back to simulator fabric  
+        ensure_container_iface_up('influxdb', 'influxdb-eth0', '10.0.1.20/24')
+        ensure_container_route('influxdb', '10.0.0.0/16', 'influxdb-eth0')
     except Exception:
         pass
     try:
         for idx in range(1, num_sims + 1):
             sim_name = f"sim_{idx:03d}"
             sim_iface = f"{sim_name}-eth0"
-            # ensure simulators have specific host route to Influx so source IP
-            # selection uses the sim 10.0.0.x address
+            # ensure simulators have specific host route to Influx
             try:
-                ensure_container_route(sim_name, '10.10.0.0/16', sim_iface)
-                ensure_container_route(sim_name, '10.10.2.20/32', sim_iface)
+                ensure_container_route(sim_name, '10.0.0.0/16', sim_iface)
+                ensure_container_route(sim_name, '10.0.1.20/32', sim_iface)
             except Exception:
                 # best-effort per-simulator
                 pass
@@ -1834,7 +1937,7 @@ def run_topo(num_sims=5):
     info("*** Aguarde ThingsBoard inicializar (+-30s)\n")
 
     # Wait for ThingsBoard HTTP to start answering before launching simulators' entrypoints
-    tb_ready = wait_for_thingsboard(host='10.0.0.11', port=8080, timeout=180, interval=3)
+    tb_ready = wait_for_thingsboard(host='10.0.0.2', port=8080, timeout=180, interval=3)
     if not tb_ready:
         info("[tb] ThingsBoard não respondeu no tempo esperado; simuladores serão iniciados mesmo assim (risco de conflitos).\n")
 

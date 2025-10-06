@@ -20,7 +20,7 @@ NEO4J_IMAGE = neo4j-tools:latest
 PARSER_IMAGE = parserwebapi-tools:latest
 INFLUX_IMAGE = influxdb-tools:latest
 
-MIDDTS_PATH = services/middleware-dt/
+MIDDLEWARE_PATH = services/middleware-dt/
 SIMULATOR_PATH = services/iot_simulator/
 DOCKER_PATH = dockerfiles
 # === SETUP E LIMPEZA ===
@@ -192,6 +192,9 @@ help:
 	@echo "  quick-start         -> Inicia topologia com perfil Test #5 (melhor performance)"
 	@echo "  odte                -> Executa experimento ODTE e gera relatórios (PROFILE=urllc DURATION=1800)"
 	@echo "  odte-full           -> Workflow completo: experimento + análise + gráficos"
+	@echo "  analyze-latest      -> Análise inteligente do teste URLLC mais recente"
+	@echo "  intelligent-analysis -> Análise inteligente de teste específico (TEST_DIR=<path>)"
+	@echo "  compare-urllc       -> Comparação evolutiva de todos os testes URLLC"
 	@echo ""
 	@echo "=== PERFIS DE CONFIGURAÇÃO ==="
 	@echo "  test05-best         -> Topologia URLLC + perfil Test #5 (melhor performance)"
@@ -422,7 +425,7 @@ odte-monitored:
 	@profile="$${PROFILE:-urllc}"; duration="$${DURATION:-120}"; \
 	echo "[🔍] Executando ODTE com monitoramento de gargalos..."; \
 	echo "[⏱️] Duração: $${duration}s | Perfil: $$profile"; \
-	bash scripts/show_current_config.sh; \
+	PROFILE=$$profile bash scripts/show_current_config.sh; \
 	echo "[1/3] Iniciando monitoramento em background..."; \
 	bash scripts/monitor_during_test.sh "$$duration" & \
 	MONITOR_PID=$$!; \
@@ -434,14 +437,37 @@ odte-monitored:
 
 .PHONY: odte-full
 # Complete ODTE workflow: run experiment, generate analysis and plots
-# Usage: make odte-full [PROFILE=urllc] [DURATION=1800] [REPORTS_DIR=auto]
+# Usage: make odte-full [PROFILE=auto|urllc|embb|best_effort] [DURATION=1800] [REPORTS_DIR=auto]
 odte-full:
 	@echo "[🚀] Starting complete ODTE workflow..."; \
-	profile="$${PROFILE:-urllc}"; duration="$${DURATION:-1800}"; \
+	profile="$${PROFILE:-auto}"; duration="$${DURATION:-1800}"; \
+	if [ "$$profile" = "auto" ]; then \
+		echo "[🔍] Auto-detecting active topology profile..."; \
+		detected_profile=$$(bash scripts/detect_profile.sh); \
+		if [ "$$detected_profile" != "unknown" ]; then \
+			if [ "$$detected_profile" = "urllc_legacy" ]; then \
+				detected_profile="urllc"; \
+				echo "[✅] Detected legacy URLLC profile (3Gbit bug), treating as: $$detected_profile"; \
+			else \
+				echo "[✅] Detected active profile: $$detected_profile"; \
+			fi; \
+			profile="$$detected_profile"; \
+		else \
+			echo "⚠️ Could not detect profile, defaulting to urllc"; \
+			profile="urllc"; \
+		fi; \
+	fi; \
 	echo ""; \
-	bash scripts/show_current_config.sh; \
+	PROFILE=$$profile DURATION=$$duration bash scripts/show_current_config.sh; \
 	echo "[1/4] Running ODTE experiment (PROFILE=$$profile, DURATION=$$duration)..."; \
-	$(MAKE) odte PROFILE=$$profile DURATION=$$duration || { \
+	{ \
+		$(MAKE) odte PROFILE=$$profile DURATION=$$duration & \
+		ODTE_PID=$$!; \
+		echo "[🎯] Starting intelligent filter application in background..."; \
+		sleep 60; \
+		./scripts/apply_comprehensive_filter.sh || echo "⚠️ Filter skipped"; \
+		wait $$ODTE_PID; \
+	} || { \
 		echo "❌ ODTE experiment failed"; exit 1; \
 	}; \
 	latest_test_dir=$$(find results -name "test_*_$$profile" -type d | sort | tail -1); \
@@ -463,6 +489,10 @@ odte-full:
 	echo "[4/4] Generating plots..."; \
 	$(MAKE) plots REPORTS_DIR=$$reports_dir || { \
 		echo "❌ Plot generation failed"; exit 1; \
+	}; \
+	echo "[5/5] Running intelligent analysis..."; \
+	python3 scripts/intelligent_test_analysis.py "$$latest_test_dir" || { \
+		echo "⚠️ Intelligent analysis failed, continuing..."; \
 	}; \
 	echo "✅ Complete ODTE workflow finished successfully!"; \
 	bash scripts/show_test_summary.sh "$$reports_dir"
@@ -610,26 +640,26 @@ check-middts:
 	@echo "[🔎] Verificando serviço MidDiTS (porta 8000)"
 	docker exec -it mn.middts bash -c 'nc -z -w 2 127.0.0.1 8000' && echo "✅ MidDiTS ouvindo na porta 8000" || echo "❌ MidDiTS não está ouvindo na porta 8000"
 	@echo "[🔎] Testando comunicação com o banco (db)"
-	docker exec -it mn.middts ping -c 2 10.10.2.10 || echo "[ERRO] middts não pinga db"
-	docker exec -it mn.middts bash -c 'nc -vz -w 2 10.10.2.10 5432' || echo "[ERRO] middts não conecta TCP 5432 em db"
+	docker exec -it mn.middts ping -c 2 10.0.1.10 || echo "[ERRO] middts não pinga db"
+	docker exec -it mn.middts bash -c 'nc -vz -w 2 10.0.1.10 5432' || echo "[ERRO] middts não conecta TCP 5432 em db"
 	@echo "[🔎] Testando comunicação com InfluxDB"
-	docker exec -it mn.middts ping -c 2 10.10.2.20 || echo "[ERRO] middts não pinga influxdb"
-	docker exec -it mn.middts bash -c 'nc -vz -w 2 10.10.2.20 8086' || echo "[ERRO] middts não conecta TCP 8086 em influxdb"
+	docker exec -it mn.middts ping -c 2 10.0.1.20 || echo "[ERRO] middts não pinga influxdb"
+	docker exec -it mn.middts bash -c 'nc -vz -w 2 10.0.1.20 8086' || echo "[ERRO] middts não conecta TCP 8086 em influxdb"
 	@echo "[🔎] Testando comunicação com Neo4j"
-	docker exec -it mn.middts ping -c 2 10.10.2.30 || echo "[ERRO] middts não pinga neo4j"
-	docker exec -it mn.middts bash -c 'nc -vz -w 2 10.10.2.30 7474' || echo "[ERRO] middts não conecta TCP 7474 em neo4j"
+	docker exec -it mn.middts ping -c 2 10.0.1.30 || echo "[ERRO] middts não pinga neo4j"
+	docker exec -it mn.middts bash -c 'nc -vz -w 2 10.0.1.30 7474' || echo "[ERRO] middts não conecta TCP 7474 em neo4j"
 
 check-db:
 	@echo "[🔎] Verificando container db"
 	docker ps --format '{{.Names}}' | grep -q '^mn.db$$' && echo "✅ Container mn.db está rodando" || echo "❌ Container mn.db não está rodando"
 	@echo "[🔎] Verificando serviço PostgreSQL (porta 5432)"
 	docker exec -it mn.db bash -c 'nc -z -w 2 127.0.0.1 5432' && echo "✅ PostgreSQL ouvindo na porta 5432" || echo "❌ PostgreSQL não está ouvindo na porta 5432"
-	@echo "[🔎] Testando comunicação com tb (rede local 10.10.1.2 — não é usada pelo ThingsBoard, esperado falhar)"
-	docker exec -it mn.db ping -c 2 10.10.1.2 || echo "[ERRO] db não pinga tb (10.10.1.2 — esperado se falhar)"
-	docker exec -it mn.db bash -c 'nc -vz -w 2 10.10.1.2 8080' || echo "[ERRO] db não conecta TCP 8080 em tb (10.10.1.2 — esperado se falhar)"
-	@echo "[🔎] Testando comunicação com tb (gerenciamento 10.0.0.11 — interface correta segundo a topologia)"
-	docker exec -it mn.db ping -c 2 10.0.0.11 || echo "[ERRO] db não pinga tb (10.0.0.11 — deveria funcionar)"
-	docker exec -it mn.db bash -c 'nc -vz -w 2 10.0.0.11 8080' || echo "[ERRO] db não conecta TCP 8080 em tb (10.0.0.11 — deveria funcionar)"
+	@echo "[🔎] Testando comunicação com tb (rede local 10.0.0.2 — interface relevante para ThingsBoard)"
+	docker exec -it mn.db ping -c 2 10.0.0.2 || echo "[ERRO] db não pinga tb (10.0.0.2)"
+	docker exec -it mn.db bash -c 'nc -vz -w 2 10.0.0.2 8080' || echo "[ERRO] db não conecta TCP 8080 em tb (10.0.0.2)"
+	@echo "[🔎] Testando comunicação com tb (gerenciamento 10.0.0.2 — interface correta segundo a topologia)"
+	docker exec -it mn.db ping -c 2 10.0.0.2 || echo "[ERRO] db não pinga tb (10.0.0.2 — deveria funcionar)"
+	docker exec -it mn.db bash -c 'nc -vz -w 2 10.0.0.2 8080' || echo "[ERRO] db não conecta TCP 8080 em tb (10.0.0.2 — deveria funcionar)"
 
 check-influxdb:
 	@echo "[🔎] Verificando container influxdb"
@@ -637,9 +667,9 @@ check-influxdb:
 	@echo "[🔎] Verificando serviço InfluxDB (porta 8086 — esperado em 127.0.0.1 e 10.10.2.20, conforme topologia)"
 	docker exec -it mn.influxdb bash -c 'nc -z -w 2 127.0.0.1 8086' && echo "✅ InfluxDB ouvindo na porta 8086 (localhost)" || echo "❌ InfluxDB não está ouvindo na porta 8086 (localhost)"
 	docker exec -it mn.influxdb bash -c 'nc -z -w 2 10.10.2.20 8086' && echo "✅ InfluxDB ouvindo na porta 8086 (10.10.2.20)" || echo "❌ InfluxDB não está ouvindo na porta 8086 (10.10.2.20)"
-	@echo "[🔎] Testando comunicação com middts (10.10.2.2 — interface relevante para MidDiTS)"
-	docker exec -it mn.influxdb ping -c 2 10.10.2.2 || echo "[ERRO] influxdb não pinga middts (10.10.2.2 — deveria funcionar)"
-	docker exec -it mn.influxdb bash -c 'nc -vz -w 2 10.10.2.2 8000' || echo "[ERRO] influxdb não conecta TCP 8000 em middts (10.10.2.2 — deveria funcionar)"
+	@echo "[🔎] Testando comunicação com middts (10.0.1.2 — interface relevante para MidDiTS)"
+	docker exec -it mn.influxdb ping -c 2 10.0.1.2 || echo "[ERRO] influxdb não pinga middts (10.0.1.2 — deveria funcionar)"
+	docker exec -it mn.influxdb bash -c 'nc -vz -w 2 10.0.1.2 8000' || echo "[ERRO] influxdb não conecta TCP 8000 em middts (10.0.1.2 — deveria funcionar)"
 	@echo "[DEBUG] Interfaces e rotas do influxdb para diagnóstico:"
 	docker exec -it mn.influxdb ip addr
 	docker exec -it mn.influxdb ip route
@@ -650,8 +680,8 @@ check-neo4j:
 	@echo "[🔎] Verificando serviço Neo4j (porta 7474)"
 	docker exec -it mn.neo4j bash -c 'nc -z -w 2 127.0.0.1 7474' && echo "✅ Neo4j ouvindo na porta 7474" || echo "❌ Neo4j não está ouvindo na porta 7474"
 	@echo "[🔎] Testando comunicação com middts"
-	docker exec -it mn.neo4j ping -c 2 10.10.2.2 || echo "[ERRO] neo4j não pinga middts"
-	docker exec -it mn.neo4j bash -c 'nc -vz -w 2 10.10.2.2 8000' || echo "[ERRO] neo4j não conecta TCP 8000 em middts"
+	docker exec -it mn.neo4j ping -c 2 10.0.1.2 || echo "[ERRO] neo4j não pinga middts"
+	docker exec -it mn.neo4j bash -c 'nc -vz -w 2 10.0.1.2 8000' || echo "[ERRO] neo4j não conecta TCP 8000 em middts"
 
 check-parser:
 	@echo "[🔎] Verificando container parser"
@@ -661,8 +691,8 @@ check-parser:
 		echo "[🔎] Verificando serviço Parser (porta 8080) dentro da topologia"; \
 		docker exec -it mn.parser bash -c 'nc -z -w 2 127.0.0.1 8080' && echo "✅ Parser (mn.parser) ouvindo na porta 8080" || echo "❌ Parser (mn.parser) não está ouvindo na porta 8080"; \
 		echo "[🔎] Testando comunicação com middts (rede interna)"; \
-		docker exec -it mn.parser ping -c 2 10.10.2.2 || echo "[ERRO] parser não pinga middts"; \
-		docker exec -it mn.parser bash -c 'nc -vz -w 2 10.10.2.2 8000' || echo "[ERRO] parser não conecta TCP 8000 em middts"; \
+		docker exec -it mn.parser ping -c 2 10.0.1.2 || echo "[ERRO] parser não pinga middts"; \
+		docker exec -it mn.parser bash -c 'nc -vz -w 2 10.0.1.2 8000' || echo "[ERRO] parser não conecta TCP 8000 em middts"; \
 	elif docker ps --format '{{.Names}}' | grep -q '^parser$$'; then \
 		echo "ℹ️ Container externo 'parser' está rodando (fora da topologia)"; \
 		echo "Ports:"; docker port parser || true; \
@@ -852,9 +882,9 @@ check-network:
 	docker exec -it mn.tb bash -c 'nc -vz -w 2 10.10.2.2 8000' || echo "[ERRO] tb não conecta TCP 8000 em middts"
 	docker exec -it mn.middts bash -c 'nc -vz -w 2 10.10.1.2 8080' || echo "[ERRO] middts não conecta TCP 8080 em tb"
 	@echo "[tb <-> db] ping e TCP"
-	docker exec -it mn.tb ping -c 2 10.10.1.10 || echo "[ERRO] tb não pinga db"
+	docker exec -it mn.tb ping -c 2 10.0.0.10 || echo "[ERRO] tb não pinga db"
 	docker exec -it mn.db ping -c 2 10.10.1.2 || echo "[ERRO] db não pinga tb"
-	docker exec -it mn.tb bash -c 'nc -vz -w 2 10.10.1.10 5432' || echo "[ERRO] tb não conecta TCP 5432 em db"
+	docker exec -it mn.tb bash -c 'nc -vz -w 2 10.0.0.10 5432' || echo "[ERRO] tb não conecta TCP 5432 em db"
 	docker exec -it mn.db bash -c 'nc -vz -w 2 10.10.1.2 8080' || echo "[ERRO] db não conecta TCP 8080 em tb"
 	@echo "[middts <-> db] ping e TCP"
 	docker exec -it mn.middts ping -c 2 10.10.2.10 || echo "[ERRO] middts não pinga db"
@@ -862,13 +892,13 @@ check-network:
 	docker exec -it mn.middts bash -c 'nc -vz -w 2 10.10.2.10 5432' || echo "[ERRO] middts não conecta TCP 5432 em db"
 	docker exec -it mn.db bash -c 'nc -vz -w 2 10.10.2.2 8000' || echo "[ERRO] db não conecta TCP 8000 em middts"
 	@echo "[middts <-> influxdb] ping e TCP"
-	docker exec -it mn.middts ping -c 2 10.10.2.20 || echo "[ERRO] middts não pinga influxdb"
-	docker exec -it mn.influxdb ping -c 2 10.10.2.2 || echo "[ERRO] influxdb não pinga middts"
-	docker exec -it mn.middts bash -c 'nc -vz -w 2 10.10.2.20 8086' || echo "[ERRO] middts não conecta TCP 8086 em influxdb"
-	docker exec -it mn.influxdb bash -c 'nc -vz -w 2 10.10.2.2 8000' || echo "[ERRO] influxdb não conecta TCP 8000 em middts"
+	docker exec -it mn.middts ping -c 2 10.0.1.20 || echo "[ERRO] middts não pinga influxdb"
+	docker exec -it mn.influxdb ping -c 2 10.0.1.2 || echo "[ERRO] influxdb não pinga middts"
+	docker exec -it mn.middts bash -c 'nc -vz -w 2 10.0.1.20 8086' || echo "[ERRO] middts não conecta TCP 8086 em influxdb"
+	docker exec -it mn.influxdb bash -c 'nc -vz -w 2 10.0.1.2 8000' || echo "[ERRO] influxdb não conecta TCP 8000 em middts"
 	@echo "[middts <-> neo4j] ping e TCP"
 	docker exec -it mn.middts ping -c 2 10.10.2.30 || echo "[ERRO] middts não pinga neo4j"
-	docker exec -it mn.neo4j ping -c 2 10.10.2.2 || echo "[ERRO] neo4j não pinga middts"
+	docker exec -it mn.neo4j ping -c 2 10.0.1.2 || echo "[ERRO] neo4j não pinga middts"
 	docker exec -it mn.middts bash -c 'nc -vz -w 2 10.10.2.30 7474' || echo "[ERRO] middts não conecta TCP 7474 em neo4j"
 	@echo "[middts <-> parser] ping e TCP"
 	@if docker ps --format '{{.Names}}' | grep -q '^mn.parser$$'; then \
@@ -890,3 +920,33 @@ check-network:
 	  docker exec -it mn.tb bash -c "nc -vz -w 2 $$sim_ip 5000" || echo "[ERRO] tb não conecta TCP 5000 em sim_$$i"; \
 	  docker exec -it mn.sim_`printf '%03d' $$i` bash -c "nc -vz -w 2 $$tb_ip 8080" || echo "[ERRO] sim_$$i não conecta TCP 8080 em tb"; \
 	done
+
+# === INTELLIGENT ANALYSIS ===
+.PHONY: intelligent-analysis analyze-latest compare-urllc
+
+# Run intelligent analysis on a specific test directory
+# Usage: make intelligent-analysis TEST_DIR=results/test_20251006T004352Z_urllc
+intelligent-analysis:
+	@if [ -z "$(TEST_DIR)" ]; then \
+		echo "❌ Erro: Use 'make intelligent-analysis TEST_DIR=<path_to_test_directory>'"; \
+		echo "📁 Exemplo: make intelligent-analysis TEST_DIR=results/test_20251006T004352Z_urllc"; \
+		exit 1; \
+	fi
+	@echo "🔍 Executando análise inteligente em $(TEST_DIR)..."
+	@python3 scripts/intelligent_test_analysis.py "$(TEST_DIR)"
+
+# Run intelligent analysis on the most recent URLLC test
+analyze-latest:
+	@echo "🔍 Encontrando o teste URLLC mais recente..."
+	@latest_urllc=$$(find results -name "test_*_urllc" -type d | sort | tail -1); \
+	if [ -z "$$latest_urllc" ]; then \
+		echo "❌ Nenhum teste URLLC encontrado em results/"; \
+		exit 1; \
+	fi; \
+	echo "📁 Analisando: $$latest_urllc"; \
+	$(MAKE) intelligent-analysis TEST_DIR=$$latest_urllc
+
+# Compare all URLLC tests and show evolution over time
+compare-urllc:
+	@echo "📊 Executando análise comparativa de todos os testes URLLC..."
+	@python3 scripts/compare_urllc_tests.py results/

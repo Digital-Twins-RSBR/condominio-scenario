@@ -5,8 +5,8 @@
 
 **Projeto:** Cenário Condomínio - URLLC com ODTE Real  
 **Período:** Setembro-Outubro 2025  
-**Objetivo Principal:** Atingir latências <200ms para comunicações S2M e M2S  
-**Status Final:** ✅ **SUCESSO COMPLETO**  
+**Objetivo Principal:** Atingir latências <200ms para comunicações Simulador para middts(S2M) e Middts para Simulador(M2S)  
+**Status Final:** ✅ **SUCESSO**  
 **Metodologia:** Experimentação iterativa com análise de gargalos  
 
 ## 🎯 DEFINIÇÃO DO PROBLEMA
