@@ -195,6 +195,7 @@ help:
 	@echo "  analyze-latest      -> Análise inteligente do teste URLLC mais recente"
 	@echo "  intelligent-analysis -> Análise inteligente de teste específico (TEST_DIR=<path>)"
 	@echo "  compare-urllc       -> Comparação evolutiva de todos os testes URLLC"
+	@echo "  dashboard           -> Dashboard executivo do status URLLC atual"
 	@echo ""
 	@echo "=== PERFIS DE CONFIGURAÇÃO ==="
 	@echo "  test05-best         -> Topologia URLLC + perfil Test #5 (melhor performance)"
@@ -922,7 +923,7 @@ check-network:
 	done
 
 # === INTELLIGENT ANALYSIS ===
-.PHONY: intelligent-analysis analyze-latest compare-urllc
+.PHONY: intelligent-analysis analyze-latest compare-urllc dashboard
 
 # Run intelligent analysis on a specific test directory
 # Usage: make intelligent-analysis TEST_DIR=results/test_20251006T004352Z_urllc
@@ -950,3 +951,8 @@ analyze-latest:
 compare-urllc:
 	@echo "📊 Executando análise comparativa de todos os testes URLLC..."
 	@python3 scripts/compare_urllc_tests.py results/
+
+# Generate executive dashboard of current URLLC status
+dashboard:
+	@echo "🎯 Gerando dashboard executivo URLLC..."
+	@python3 scripts/urllc_dashboard.py
