@@ -21,9 +21,14 @@ echo ""
 echo "2. 🔍 CONSULTANDO IDs DIRETAMENTE NO BANCO DE DADOS:"
 
 # Consultar dispositivos diretamente via Django shell - método mais confiável
-echo "   📡 Executando consulta no Django shell..."
+echo "   📡 Executando consulta no Django shell (com retries)..."
 
-DJANGO_QUERY="
+ALL_IDS=""
+TOTAL_IDS=0
+RETRIES=4
+SLEEP=2
+for attempt in $(seq 1 $RETRIES); do
+    DJANGO_QUERY="
 from middleware.models import Device
 devices = Device.objects.all()
 device_ids = [str(device.thingsboard_id) for device in devices if device.thingsboard_id]
@@ -34,43 +39,42 @@ print('DEVICE_IDS_END')
 print(f'TOTAL_COUNT:{len(device_ids)}')
 "
 
-# Executar consulta Django e capturar resultado
-DB_RESULT=$(docker exec mn.middts bash -c "cd /middleware-dt && echo \"$DJANGO_QUERY\" | python3 manage.py shell" 2>/dev/null || true)
+    DB_RESULT=$(docker exec mn.middts bash -c "cd /middleware-dt && echo \"$DJANGO_QUERY\" | python3 manage.py shell" 2>/dev/null || true)
 
-# Extrair IDs da saída do Django shell
-ALL_IDS=""
-TOTAL_IDS=0
-
-if echo "$DB_RESULT" | grep -q "DEVICE_IDS_START"; then
-    # Extrair IDs entre os marcadores
-    ALL_IDS=$(echo "$DB_RESULT" | sed -n '/DEVICE_IDS_START/,/DEVICE_IDS_END/p' | grep -v "DEVICE_IDS_" | grep -E "^[a-f0-9-]{36}$" | tr '\n' ' ')
-    TOTAL_IDS=$(echo "$DB_RESULT" | grep "TOTAL_COUNT:" | cut -d: -f2 || echo "0")
-    
-    if [ -n "$ALL_IDS" ] && [ "$TOTAL_IDS" -gt "0" ]; then
-        echo "   ✅ Consulta Django bem-sucedida!"
-        echo "   📊 Dispositivos encontrados no banco: $TOTAL_IDS"
-    else
-        echo "   ⚠️ Consulta Django executada, mas nenhum device encontrado ainda"
-        TOTAL_IDS=0
-        ALL_IDS=""
+    if echo "$DB_RESULT" | grep -q "DEVICE_IDS_START"; then
+        ALL_IDS=$(echo "$DB_RESULT" | sed -n '/DEVICE_IDS_START/,/DEVICE_IDS_END/p' | grep -v "DEVICE_IDS_" | grep -E "^[a-f0-9-]{36}$" | tr '\n' ' ')
+        TOTAL_IDS=$(echo "$DB_RESULT" | grep "TOTAL_COUNT:" | cut -d: -f2 || echo "0")
+        if [ -n "$ALL_IDS" ] && [ "$TOTAL_IDS" -gt "0" ]; then
+            echo "   ✅ Consulta Django bem-sucedida (attempt $attempt)!"
+            break
+        fi
     fi
-else
-    echo "   ❌ Falha na consulta Django, tentando método alternativo..."
-    
-    # Fallback: tentar consulta SQL direta no PostgreSQL
-    echo "   📡 Tentando consulta SQL direta..."
-    
+    echo "   ⚠️ Tentativa $attempt/$RETRIES: nenhum device detectado — esperando $SLEEP s e retry..."
+    sleep $SLEEP
+done
+
+if [ -z "$ALL_IDS" ] || [ "$TOTAL_IDS" -eq "0" ]; then
+    echo "   ❌ Consulta Django falhou após retries, tentando método alternativo (SQL)..."
     SQL_RESULT=$(docker exec mn.db psql -U postgres -d middts -tAc "SELECT thingsboard_id FROM middleware_device WHERE thingsboard_id IS NOT NULL;" 2>/dev/null || true)
-    
     if [ -n "$SQL_RESULT" ]; then
         ALL_IDS=$(echo "$SQL_RESULT" | grep -E "^[a-f0-9-]{36}$" | tr '\n' ' ')
         TOTAL_IDS=$(echo "$ALL_IDS" | wc -w)
-        echo "   ✅ Consulta SQL direta bem-sucedida!"
-        echo "   📊 Dispositivos encontrados via SQL: $TOTAL_IDS"
+        echo "   ✅ Consulta SQL direta bem-sucedida! IDs: $TOTAL_IDS"
     else
         echo "   ⚠️ Nenhum método de consulta funcionou - banco pode estar vazio ainda"
         TOTAL_IDS=0
         ALL_IDS=""
+    fi
+fi
+
+# If still no IDs found, try using a cached file if available to avoid testing empty set
+if [ "$TOTAL_IDS" -eq "0" ]; then
+    CACHE_FILE="/var/condominio-scenario/config/device_id_cache.txt"
+    if [ -f "$CACHE_FILE" ]; then
+        echo "   🔁 Usando cache local de device IDs: $CACHE_FILE"
+        ALL_IDS=$(cat "$CACHE_FILE" | tr '\n' ' ')
+        TOTAL_IDS=$(echo "$ALL_IDS" | wc -w)
+        echo "   📊 IDs carregados do cache: $TOTAL_IDS"
     fi
 fi
 

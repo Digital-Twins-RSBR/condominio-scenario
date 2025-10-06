@@ -191,10 +191,12 @@ help:
 	@echo "  topo                -> Inicia a topologia (containernet) com perfil test05_best_performance por padrão"
 	@echo "  quick-start         -> Inicia topologia com perfil Test #5 (melhor performance)"
 	@echo "  odte                -> Executa experimento ODTE e gera relatórios (PROFILE=urllc DURATION=1800)"
-	@echo "  odte-full           -> Workflow completo: experimento + análise + gráficos"
+	@echo "  odte-full           -> Workflow completo com graceful shutdown (Ctrl+C salva dados)"
+	@echo "  odte-graceful       -> Alias para odte-full (compatibilidade)"
 	@echo "  analyze-latest      -> Análise inteligente do teste URLLC mais recente"
 	@echo "  intelligent-analysis -> Análise inteligente de teste específico (TEST_DIR=<path>)"
 	@echo "  compare-urllc       -> Comparação evolutiva de todos os testes URLLC"
+	@echo "  compare-profiles    -> Comparação URLLC vs eMBB vs best_effort"
 	@echo "  dashboard           -> Dashboard executivo do status URLLC atual"
 	@echo ""
 	@echo "=== PERFIS DE CONFIGURAÇÃO ==="
@@ -436,67 +438,24 @@ odte-monitored:
 	wait $$MONITOR_PID; \
 	echo "✅ Teste ODTE com monitoramento concluído!"
 
-.PHONY: odte-full
+.PHONY: odte-graceful odte-full
+# Graceful ODTE workflow with Ctrl+C interrupt handling
+# Usage: make odte-graceful [PROFILE=auto|urllc|embb|best_effort] [DURATION=1800]
+# Features: Ctrl+C saves partial results instead of losing all data
+odte-graceful:
+	@echo "[🛡️] Starting graceful ODTE workflow with interrupt handling..."; \
+	profile="$${PROFILE:-auto}"; duration="$${DURATION:-1800}"; \
+	chmod +x scripts/graceful_odte.sh; \
+	./scripts/graceful_odte.sh "$$profile" "$$duration"
+
 # Complete ODTE workflow: run experiment, generate analysis and plots
 # Usage: make odte-full [PROFILE=auto|urllc|embb|best_effort] [DURATION=1800] [REPORTS_DIR=auto]
+# Features: Graceful shutdown with Ctrl+C handling (saves partial results)
 odte-full:
-	@echo "[🚀] Starting complete ODTE workflow..."; \
+	@echo "[🚀] Starting complete ODTE workflow with graceful shutdown..."; \
 	profile="$${PROFILE:-auto}"; duration="$${DURATION:-1800}"; \
-	if [ "$$profile" = "auto" ]; then \
-		echo "[🔍] Auto-detecting active topology profile..."; \
-		detected_profile=$$(bash scripts/detect_profile.sh); \
-		if [ "$$detected_profile" != "unknown" ]; then \
-			if [ "$$detected_profile" = "urllc_legacy" ]; then \
-				detected_profile="urllc"; \
-				echo "[✅] Detected legacy URLLC profile (3Gbit bug), treating as: $$detected_profile"; \
-			else \
-				echo "[✅] Detected active profile: $$detected_profile"; \
-			fi; \
-			profile="$$detected_profile"; \
-		else \
-			echo "⚠️ Could not detect profile, defaulting to urllc"; \
-			profile="urllc"; \
-		fi; \
-	fi; \
-	echo ""; \
-	PROFILE=$$profile DURATION=$$duration bash scripts/show_current_config.sh; \
-	echo "[1/4] Running ODTE experiment (PROFILE=$$profile, DURATION=$$duration)..."; \
-	{ \
-		$(MAKE) odte PROFILE=$$profile DURATION=$$duration & \
-		ODTE_PID=$$!; \
-		echo "[🎯] Starting intelligent filter application in background..."; \
-		sleep 60; \
-		./scripts/apply_comprehensive_filter.sh || echo "⚠️ Filter skipped"; \
-		wait $$ODTE_PID; \
-	} || { \
-		echo "❌ ODTE experiment failed"; exit 1; \
-	}; \
-	latest_test_dir=$$(find results -name "test_*_$$profile" -type d | sort | tail -1); \
-	if [ -z "$$latest_test_dir" ]; then \
-		echo "❌ No test directory found for profile $$profile"; exit 1; \
-	fi; \
-	reports_dir="$$latest_test_dir/generated_reports"; \
-	if [ ! -d "$$reports_dir" ]; then \
-		echo "❌ Reports directory not found: $$reports_dir"; exit 1; \
-	fi; \
-	echo "[2/4] Performing detailed latency analysis..."; \
-	python3 scripts/report_generators/latency_analysis.py "$$reports_dir" || { \
-		echo "❌ Latency analysis failed"; exit 1; \
-	}; \
-	echo "[3/4] Performing standard analysis on: $$reports_dir"; \
-	$(MAKE) analyze REPORTS_DIR=$$reports_dir || { \
-		echo "❌ Analysis failed"; exit 1; \
-	}; \
-	echo "[4/4] Generating plots..."; \
-	$(MAKE) plots REPORTS_DIR=$$reports_dir || { \
-		echo "❌ Plot generation failed"; exit 1; \
-	}; \
-	echo "[5/5] Running intelligent analysis..."; \
-	python3 scripts/intelligent_test_analysis.py "$$latest_test_dir" || { \
-		echo "⚠️ Intelligent analysis failed, continuing..."; \
-	}; \
-	echo "✅ Complete ODTE workflow finished successfully!"; \
-	bash scripts/show_test_summary.sh "$$reports_dir"
+	chmod +x scripts/graceful_odte.sh; \
+	./scripts/graceful_odte.sh "$$profile" "$$duration"
 
 # === SCRIPTS URLLC E OTIMIZAÇÃO ===
 .PHONY: check-urllc check-topology check-tc summary organize-reports apply-urllc
@@ -923,7 +882,7 @@ check-network:
 	done
 
 # === INTELLIGENT ANALYSIS ===
-.PHONY: intelligent-analysis analyze-latest compare-urllc dashboard
+.PHONY: intelligent-analysis analyze-latest compare-urllc compare-profiles dashboard
 
 # Run intelligent analysis on a specific test directory
 # Usage: make intelligent-analysis TEST_DIR=results/test_20251006T004352Z_urllc
@@ -951,6 +910,11 @@ analyze-latest:
 compare-urllc:
 	@echo "📊 Executando análise comparativa de todos os testes URLLC..."
 	@python3 scripts/compare_urllc_tests.py results/
+
+# Compare URLLC vs eMBB vs best_effort profiles
+compare-profiles:
+	@echo "⚔️ Executando comparação entre perfis de rede..."
+	@python3 scripts/compare_urllc_vs_embb.py
 
 # Generate executive dashboard of current URLLC status
 dashboard:

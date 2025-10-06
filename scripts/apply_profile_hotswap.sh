@@ -40,16 +40,16 @@ echo "  💓 HEARTBEAT_INTERVAL: ${HEARTBEAT}s"
 echo "📄 Copiando perfil para thingsboard-urllc.yml..."
 cp "$PROFILE_FILE" "/var/condominio-scenario/config/thingsboard-urllc.yml"
 
-# 2. Aplicar HEARTBEAT nos simuladores
+# 2. Aplicar HEARTBEAT nos simuladores (paralelizado para acelerar)
 echo "💓 Aplicando HEARTBEAT=${HEARTBEAT}s nos simuladores..."
-for sim_num in $(seq -w 1 10); do
-    container="mn.sim_0${sim_num}"
-    if docker ps --format "{{.Names}}" | grep -q "^${container}$" 2>/dev/null; then
-        docker exec "$container" bash -c "
-            sed -i 's/HEARTBEAT_INTERVAL = [0-9]*/HEARTBEAT_INTERVAL = ${HEARTBEAT}/g' /iot_simulator/config.py 2>/dev/null || true
-        " 2>/dev/null || true
-    fi
+# Detectar containers simuladores existentes e aplicar em paralelo
+SIM_CONTAINERS=$(docker ps --format '{{.Names}}' | grep '^mn.sim_' || true)
+for container in $SIM_CONTAINERS; do
+    # aplicar em background para reduzir tempo total
+    docker exec "$container" bash -c "sed -i 's/HEARTBEAT_INTERVAL = [0-9]*/HEARTBEAT_INTERVAL = ${HEARTBEAT}/g' /iot_simulator/config.py 2>/dev/null || true" 2>/dev/null &
 done
+# esperar todos os updates terminarem
+wait || true
 
 # 3. Atualizar marcadores de perfil
 echo "$PROFILE_NAME" > "/var/condominio-scenario/config/.current_profile"
