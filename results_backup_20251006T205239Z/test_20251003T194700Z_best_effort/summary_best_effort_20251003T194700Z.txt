@@ -1,0 +1,6 @@
+profile: best_effort
+start: 2025-10-03T19:47:00Z
+duration_seconds: 300
+bucket_export: skipped
+reports_dir: results/test_20251003T194700Z_best_effort
+note: check logs for screen session: screen -r topo

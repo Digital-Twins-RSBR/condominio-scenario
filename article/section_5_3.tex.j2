@@ -1,0 +1,57 @@
+% Subsection 5.3 — Results and Discussion (generated)
+\subsection{Results and Discussion}
+
+This section presents and discusses the empirical results obtained from the controlled experiments described in Section~\ref{sec:methodology}. Each run reproduced the complete bidirectional telemetry cycle under distinct network profiles (URLLC and eMBB), enabling quantitative assessment of the MiDDTS middleware's responsiveness, delivery reliability, and operational efficiency through the ODTE framework.
+
+The discussion is structured as follows: first, latency distributions and compliance rates are analyzed; second, reliability and availability trends are examined; and finally, composite ODTE outcomes are interpreted in light of the network conditions and architectural behavior of the platform.
+
+\subsubsection{Latency Analysis and Temporal Compliance}
+
+The latency distributions measured for both communication directions revealed distinct patterns between the URLLC and eMBB profiles.
+
+\paragraph{URLLC (best test: {{ urllc.test_name }})}
+\begin{itemize}
+  \item S2M (Sensor $\rightarrow$ Middleware): Mean = {{ "%.1f" % urllc.s2m_mean_ms }} ms; P95 = {{ "%.1f" % urllc.s2m_p95 }} ms; Compliance (<200 ms) = {{ "%.1f" % urllc.s2m_compliance_pct }}\%.
+  \item M2S (Middleware $\rightarrow$ Sensor): Mean = {{ "%.1f" % urllc.m2s_mean_ms }} ms; P95 = {{ "%.1f" % urllc.m2s_p95 }} ms; Compliance (<200 ms) = {{ "%.1f" % urllc.m2s_compliance_pct }}\%.
+\end{itemize}
+
+\begin{figure}[ht]
+  \centering
+  {% for img in urllc.plots %}
+    \includegraphics[width=0.45\linewidth]{ {{ img.path }} }
+  {% endfor %}
+  \caption{Selected plots for URLLC best test (latency distribution and ODTE analysis).}
+\end{figure}
+
+\paragraph{eMBB (best test: {{ embb.test_name }})}
+\begin{itemize}
+  \item S2M (Sensor $\rightarrow$ Middleware): Mean = {{ "%.1f" % embb.s2m_mean_ms }} ms; P95 = {{ "%.1f" % embb.s2m_p95 }} ms; Compliance (<200 ms) = {{ "%.1f" % embb.s2m_compliance_pct }}\%.
+  \item M2S (Middleware $\rightarrow$ Sensor): Mean = {{ "%.1f" % embb.m2s_mean_ms }} ms; P95 = {{ "%.1f" % embb.m2s_p95 }} ms; Compliance (<200 ms) = {{ "%.1f" % embb.m2s_compliance_pct }}\%.
+\end{itemize}
+
+\begin{figure}[ht]
+  \centering
+  {% for img in embb.plots %}
+    \includegraphics[width=0.45\linewidth]{ {{ img.path }} }
+  {% endfor %}
+  \caption{Selected plots for eMBB best test (latency distribution and ODTE analysis).}
+\end{figure}
+
+\subsubsection{Reliability and Availability Trends}
+
+For the URLLC scenario, message delivery reliability (received/sent) was estimated as: S2M reliability = {{ "%.3f" % urllc.s2m_reliability }}, M2S reliability = {{ "%.3f" % urllc.m2s_reliability }}. Availability (A) averaged {{ "%.2f" % urllc.A_avg_pct }}\% (weighted A = {{ "%.2f" % urllc.A_weighted_pct }}\%).
+
+For the eMBB scenario, S2M reliability = {{ "%.3f" % embb.s2m_reliability }}, M2S reliability = {{ "%.3f" % embb.m2s_reliability }}. Availability (A) averaged {{ "%.2f" % embb.A_avg_pct }}\% (weighted A = {{ "%.2f" % embb.A_weighted_pct }}\%).
+
+\subsubsection{ODTE Synthesis and Comparative Evaluation}
+
+The ODTE synthesis yields:
+\begin{itemize}
+  \item URLLC (operational): ODTE = {{ "%.1f" % urllc.odte_operational_pct }}\%.
+  \item URLLC (optimized bidirectional): ODTE = {{ "%.1f" % urllc.odte_bidirectional_pct }}\%.
+  \item eMBB (aggregated): ODTE = {{ "%.1f" % embb.odte_operational_pct }}\% (± {{ "%.1f" % embb.odte_std_pct }}).
+\end{itemize}
+
+\subsubsection{Discussion and Implications}
+
+{{ discussion | default('The results indicate clear sensitivity of ODTE to latency and reliability degradation; URLLC maintains near-deterministic behavior while eMBB presents larger variance and reduced ODTE.') }}

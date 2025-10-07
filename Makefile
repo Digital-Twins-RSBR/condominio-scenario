@@ -394,10 +394,61 @@ odte:
 	echo "[⏱️] Duração: $${duration}s | Perfil: $$profile"; \
 	SCHEDULE_FILE=/dev/null bash scripts/apply_slice.sh "$$profile" --execute-scenario "$$duration" 2>/dev/null || echo "[⚠️] Possíveis warnings durante execução (normal)"
 
+
+# Stop topology helper: best-effort terminate process and cleanup netns
+.PHONY: stop-topo
+stop-topo:
+	@echo "[🛑] Stopping topology (best-effort) and cleaning up network artifacts..."; \
+	-sudo pkill -f "topo_qos.py" || echo "[INFO] topo process not found"; \
+	-sudo pkill -f "containernet" || true; \
+	# run mn -c cleanup (if mininet/containernet left state)
+	-sudo mn -c || true; \
+	# remove docker containers/networks with mn. prefix
+	-docker ps -a --filter "name=mn." -q | xargs -r docker rm -f || true; \
+	-docker network ls --filter "name=mn." -q | xargs -r docker network rm || true; \
+	@echo "[🧹] Topology stop attempted. If processes remain, inspect with 'ps aux | grep topo' or 'docker ps'."
+
+# Run a single profile: start topo, wait for readiness, run odte-full, stop topo
+.PHONY: run-scenario-profile
+run-scenario-profile:
+	@profile="$${PROFILE}"; duration="$${DURATION:-300}"; wait_timeout="$${WAIT_TIMEOUT:-300}"; \
+	if [ -z "$$profile" ]; then echo "Usage: make run-scenario-profile PROFILE=<profile> [DURATION=<s>]"; exit 1; fi; \
+	# Start topology for the profile inside a detached screen session
+	$(MAKE) topo-screen PROFILE=$$profile; \
+	# Wait for topology readiness using scripts/wait_topology_ready.sh (checks docker + screen logs)
+	echo "[⏳] Waiting for topology readiness (timeout=$$wait_timeout s)..."; \
+	if scripts/wait_topology_ready.sh $$wait_timeout; then \
+		echo "[✅] Topology ready. Running odte-full for profile $$profile (duration=$$duration)..."; \
+		$(MAKE) odte-full PROFILE=$$profile DURATION=$$duration; \
+	else \
+		echo "[ERROR] Topology did not become ready within $$wait_timeout seconds"; \
+		$(MAKE) stop-topo; \
+		exit 2; \
+	fi; \
+	# After run, stop topology
+	$(MAKE) stop-topo; \
+	echo "[ℹ️] run-scenario-profile for $$profile finished."
+
+# Composite: run URLLC, eMBB, best_effort sequentially with configurable DURATION (default 300s)
+.PHONY: run-all-scenarios
+run-all-scenarios:
+	@duration="$${DURATION:-300}"; \
+	echo "[▶️] Running full scenario suite: URLLC -> eMBB -> best_effort (duration=$$duration)"; \
+	# 1) URLLC
+	$(MAKE) run-scenario-profile PROFILE=urllc DURATION=$$duration; \
+	# 2) eMBB
+	$(MAKE) run-scenario-profile PROFILE=eMBB DURATION=$$duration; \
+	# 3) best_effort
+	$(MAKE) run-scenario-profile PROFILE=best_effort DURATION=$$duration; \
+	echo "[✅] run-all-scenarios completed."
+
 .PHONY: plots
 # Generate comprehensive visualization plots from the latest generated reports
 # Usage: make plots [REPORTS_DIR=results/generated_reports]
 plots:
+	@echo "[docs] Gerando seção de artigo (article/sections/evaluation.tex) a partir dos relatórios mais recentes"
+	@python3 scripts/render_article.py || (echo "[WARN] render failed; ensure requirements in requirements-docs.txt are installed"; exit 1)
+
 	@reports_dir="$${REPORTS_DIR:-results/generated_reports}"; \
 	echo "[📊] Gerando gráficos em $$reports_dir..."; \
 	if [ ! -d "$$reports_dir" ]; then \
@@ -509,11 +560,12 @@ check-link:
 	@echo "[check-link] running scripts/check_tc.sh (requires docker)";
 	@sh scripts/check_tc.sh
 
+
 topo-screen:
 	@echo "[📡] Executando topologia com Containernet em screen"
 	# Start the topology inside a detached screen session. Honor PRESERVE_STATE if provided,
-	# default to 1 inside the screen command.
-	@screen -S containernet -dm sh -c 'if [ -z "$$PRESERVE_STATE" ]; then PRESERVE_STATE=1; fi; export PRESERVE_STATE; sh scripts/run_topo.sh'
+	# default to 1 inside the screen command. Forward PROFILE (make var) to the run_topo.sh script.
+	@screen -S containernet -dm sh -c 'if [ -z "$$PRESERVE_STATE" ]; then PRESERVE_STATE=1; fi; export PRESERVE_STATE; sh scripts/run_topo.sh "$(PROFILE)"'
 	@echo "Use: screen -r containernet  para acessar o CLI do Containernet"
 
 

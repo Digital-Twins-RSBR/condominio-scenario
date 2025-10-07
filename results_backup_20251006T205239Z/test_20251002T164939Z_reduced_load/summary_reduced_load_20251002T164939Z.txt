@@ -1,0 +1,9 @@
+profile: reduced_load
+start: 2025-10-02T16:49:39Z
+duration_seconds: 300
+bucket_export: results/test_20251002T164939Z_reduced_load/reduced_load_20251002T164939Z.csv
+reports_dir: results/test_20251002T164939Z_reduced_load
+note: check logs for screen session: screen -r topo
+mean_T: 0
+mean_R: 0
+mean_A: 0.671264

@@ -1,0 +1,9 @@
+profile: urllc
+start: 2025-10-03T17:01:37Z
+duration_seconds: 1800
+bucket_export: results/test_20251003T170137Z_urllc/urllc_20251003T170137Z.csv
+reports_dir: results/test_20251003T170137Z_urllc
+note: check logs for screen session: screen -r topo
+mean_T: 0
+mean_R: 0
+mean_A: 0.14636

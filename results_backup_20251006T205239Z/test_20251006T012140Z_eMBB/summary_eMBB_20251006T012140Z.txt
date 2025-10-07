@@ -1,0 +1,9 @@
+profile: eMBB
+start: 2025-10-06T01:21:41Z
+duration_seconds: 300
+bucket_export: results/test_20251006T012140Z_eMBB/eMBB_20251006T012140Z.csv
+reports_dir: results/test_20251006T012140Z_eMBB
+note: check logs for screen session: screen -r topo
+mean_T: 0
+mean_R: 0
+mean_A: 0.671264

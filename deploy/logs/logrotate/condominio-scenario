@@ -1,0 +1,23 @@
+"/var/condominio-scenario/deploy/logs/*.log" {
+    # Rotate logs when they grow bigger than 100MB to avoid runaway logs
+    size 100M
+
+    # Keep 7 rotations
+    rotate 7
+
+    # Use copytruncate so processes can continue writing to the same file
+    copytruncate
+
+    # Compress old logs to save space
+    compress
+    delaycompress
+
+    # Don't error if the log file is missing
+    missingok
+
+    # Don't rotate empty files
+    notifempty
+
+    # Run as root and create new files with these permissions if needed
+    create 664 root root
+}

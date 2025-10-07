@@ -1,0 +1,11 @@
+=== THINGSBOARD CONFIG ===
+CLIENT_SIDE_RPC_TIMEOUT: 150
+HTTP_REQUEST_TIMEOUT_MS: 750
+SQL_TS_BATCH_MAX_DELAY_MS: 8
+SQL_TS_LATEST_BATCH_MAX_DELAY_MS: 4
+
+=== JAVA PROCESS ===
+root          37 21.8  8.9 10566052 1472488 pts/1 Sl+ 04:48 211:20 java -jar /usr/share/thingsboard/bin/thingsboard.jar
+
+=== SIMULATOR CONFIG ===
+Config não encontrada

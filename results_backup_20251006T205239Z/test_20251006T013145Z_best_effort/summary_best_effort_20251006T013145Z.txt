@@ -1,0 +1,9 @@
+profile: best_effort
+start: 2025-10-06T01:31:46Z
+duration_seconds: 300
+bucket_export: results/test_20251006T013145Z_best_effort/best_effort_20251006T013145Z.csv
+reports_dir: results/test_20251006T013145Z_best_effort
+note: check logs for screen session: screen -r topo
+mean_T: 0
+mean_R: 0
+mean_A: 0.66954

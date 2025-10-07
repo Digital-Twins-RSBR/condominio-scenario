@@ -1,0 +1,70 @@
+%% Jinja2 LaTeX template for the Evaluation section
+\section{Avaliação}
+
+\subsection{Configuração da máquina e alocação de recursos}
+Kernel: {{ host.kernel }}\\
+CPU: {{ host.cpu_model }} (vCPU(s): {{ host.cpus }})\\
+Memória total: {{ host.total_ram_gb }} GiB\\
+Espaço em disco disponível no diretório do projeto: {{ disk.size_gb }} GiB (rotacional: {{ disk.rota }})\\
+
+\subsection{Metodologia e definição de ODTE}
+O experimento segue a metodologia descrita na Seção~\ref{sec:methodology}. A métrica ODTE (On-time Delivery Efficiency) é calculada por sensor sobre janelas de observação e reportada em porcentagem. Os detalhes de agregação usados nesta geração automática são: usamos médias ponderadas por número de mensagens quando disponíveis; também preservamos contagens de sensores ativos para referência.
+
+\subsection{Resultados e discussão}
+% Overview aggregated values (single/latest test used above)
+\paragraph{Resumo agregado}
+Sensores configurados (ODTE rows): {{ results.odte_configured_sensors }}\\
+\vspace{1ex}
+
+% Per-profile comparisons
+\subsubsection{Comparação entre profiles}
+Os testes foram agrupados por profile (ex.: \texttt{urllc}, \texttt{eMBB}, \texttt{best_effort}). Para cada profile selecionamos o "melhor" cenário usando a heurística: primeiro priorizamos ODTE média ponderada (A\%) mais alta; em caso de empate, priorizamos menor P95 S2M. A tabela a seguir resume o melhor cenário encontrado para cada profile.
+
+\begin{tabular}{l l r r r r}
+	extbf{Profile} & \textbf{Melhor teste} & \textbf{S2M msgs} & \textbf{S2M P95 (ms)} & \textbf{M2S P95 (ms)} & \textbf{ODTE A\%} \\
+\hline
+{% for p in profiles %}
+{{ p.name }} & {{ p.test_name }} & {{ p.s2m_total_msgs }} & {{ "%.1f" % p.s2m_p95 }} & {{ "%.1f" % p.m2s_p95 }} & {{ "%.2f" % p.odte_weighted_A_pct }} \\
+{% endfor %}
+\end{tabular}
+
+\vspace{1ex}
+\subsubsection{Discussão dos melhores cenários}
+{% for p in profiles %}
+\paragraph{Profile: {{ p.name }}}
+O melhor teste identificado para o profile \texttt{ {{ p.name }} } foi: \texttt{ {{ p.test_name }} }. Este cenário apresenta ODTE ponderada de {{ "%.2f" % p.odte_weighted_A_pct }}\%, P95 S2M de {{ "%.1f" % p.s2m_p95 }} ms e P95 M2S de {{ "%.1f" % p.m2s_p95 }} ms. Comentários: {{ p.comment | default('sem comentários adicionais') }}
+{% endfor %}
+
+% Include plots and per-sensor tables for each selected best test
+\section{Detalhes dos melhores cenários}
+{% for p in profiles %}
+\subsection{Teste: {{ p.test_name }} (profile: {{ p.name }})}
+\paragraph{Plots}
+{% if p.plots %}
+{% for img in p.plots %}
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.8\linewidth]{ {{ img.path }} }
+	\caption{Plot gerado para {{ p.test_name }}: {{ img.name }} }
+\end{figure}
+{% endfor %}
+{% else %}
+Sem plots gerados para este teste.
+{% endif %}
+
+\paragraph{Tabela por sensor}
+{% if p.details %}
+\begin{longtable}{l r r r r}
+	extbf{Sensor} & \textbf{sim_sent} & \textbf{middts_sent} & \textbf{A\%} & \textbf{ODTE\_m2s\_capped} \\
+\hline
+{% for row in p.details %}
+{{ row.sensor }} & {{ row.sim_sent }} & {{ row.middts_sent }} & {{ "%.1f" % (row.A_pct) }} & {{ "%.3f" % row.ODTE_m2s_capped }} \\
+{% endfor %}
+\end{longtable}
+{% else %}
+Sem dados por sensor para este teste.
+{% endif %}
+
+{% endfor %}
+
+Discussão geral: os valores acima são gerados automaticamente a partir dos arquivos CSV em `results/*/generated_reports`. Se desejar outro modo de agregação (por exemplo, mediana entre sensores, P95 global sobre todas as amostras, ou exclusão de sensors com poucas mensagens), ajuste o script `scripts/render_article.py`.
