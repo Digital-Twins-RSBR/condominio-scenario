@@ -64,8 +64,8 @@ echo ""
 echo "5. 🎯 APLICANDO FILTRO INTELIGENTE..."
 sleep 10  # Dar tempo para simuladores começarem a enviar dados
 
-if [ -f "scripts/apply_comprehensive_filter.sh" ]; then
-    ./scripts/apply_comprehensive_filter.sh
+if [ -f "scripts/filters/apply_comprehensive_filter.sh" ]; then
+    ./scripts/filters/apply_comprehensive_filter.sh
     if [ $? -eq 0 ]; then
         echo "   ✅ Filtro inteligente aplicado com sucesso"
     else
@@ -78,9 +78,9 @@ fi
 # 6. Verificar status final
 echo ""
 echo "6. 📊 VERIFICAÇÃO FINAL..."
-if [ -f "scripts/monitor_realtime_connectivity.sh" ]; then
+if [ -f "scripts/monitor/monitor_realtime_connectivity.sh" ]; then
     echo "   🔍 Status da conectividade:"
-    ./scripts/monitor_realtime_connectivity.sh | head -15
+    ./scripts/monitor/monitor_realtime_connectivity.sh | head -15
 else
     echo "   ⚠️ Script de monitoramento não encontrado"
 fi
@@ -96,7 +96,7 @@ echo "   • Conectividade: >90%"
 echo ""
 echo "🚀 PRÓXIMOS PASSOS:"
 echo "   1. Execute: make odte-full DURATION=300"
-echo "   2. Monitore: ./scripts/monitor_realtime_connectivity.sh"
+echo "   2. Monitore: ./scripts/monitor/monitor_realtime_connectivity.sh"
 echo "   3. Analise resultados em: results/"
 echo ""
 echo "📈 BASELINE ESTABELECIDA: 2025-10-03 (test_20251003T154254Z_urllc)"

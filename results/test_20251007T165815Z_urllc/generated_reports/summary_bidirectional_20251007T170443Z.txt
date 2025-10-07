@@ -1,0 +1,8 @@
+timestamp=20251007T170443Z
+telemetry_devices=58
+rpc_devices=50
+bidirectional_devices=48
+rpc_count=190
+mean_rpc_time=0.484454
+median_rpc_time=0.791797
+max_rpc_time=0.821200

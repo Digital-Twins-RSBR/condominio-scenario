@@ -1,9 +1,0 @@
-profile: embb
-start: 2025-10-06T01:56:18Z
-duration_seconds: 1800
-bucket_export: results/test_20251006T015617Z_embb/embb_20251006T015617Z.csv
-reports_dir: results/test_20251006T015617Z_embb
-note: check logs for screen session: screen -r topo
-mean_T: 0
-mean_R: 0
-mean_A: 0.348084

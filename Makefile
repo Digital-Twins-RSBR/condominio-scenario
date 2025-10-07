@@ -7,21 +7,10 @@ MIDDTS_CUSTOM_IMAGE = middts-custom:latest
 IOT_SIM_IMAGE = iot_simulator:latest
 TB_IMAGE = tb-node-custom
 PG_IMAGE = postgres
-
-topo-rpc-ultra:
-	@$(MAKE) topo PROFILE=urllc CONFIG_PROFILE=ultra_aggressive
-
-network-opt:
-	@$(MAKE) topo PROFILE=urllc CONFIG_PROFILE=extreme_performance
-
-baseline:
-	@$(MAKE) topo PROFILE=urllc CONFIG_PROFILE=reduced_loads
 NEO4J_IMAGE = neo4j-tools:latest
 PARSER_IMAGE = parserwebapi-tools:latest
 INFLUX_IMAGE = influxdb-tools:latest
 
-MIDDLEWARE_PATH = services/middleware-dt/
-SIMULATOR_PATH = services/iot_simulator/
 DOCKER_PATH = dockerfiles
 # === SETUP E LIMPEZA ===
 .PHONY: setup clean clean-containers clean-controllers reset-db reset-db-tb reset-db-middts reset-db-influx reset-db-neo4j reset-db-sims reset-tb
@@ -132,24 +121,16 @@ prune-vol-all: prune-vol-influx prune-vol-neo4j prune-vol-middts prune-vol-tb pr
 .PHONY: install-logrotate run-logrotate truncate-logs
 
 install-logrotate:
-	@echo "[install-logrotate] Instalando configuração de logrotate para deploy/logs (requer sudo)"
-	@if [ ! -f deploy/logs/logrotate/condominio-scenario ]; then echo "[ERRO] deploy/logs/logrotate/condominio-scenario não encontrado"; exit 1; fi
-	-sudo cp deploy/logs/logrotate/condominio-scenario /etc/logrotate.d/condominio-scenario || (echo "[WARN] falha ao copiar; verifique permissões"; exit 1)
-	@echo "[install-logrotate] Configuração instalada em /etc/logrotate.d/condominio-scenario"
+	@echo "[info] Use the maintenance scripts in scripts/maintenance to manage host logrotate"
+	@sh scripts/maintenance/install-logrotate.sh
 
 run-logrotate:
-	@echo "[run-logrotate] Forçando execução imediata do logrotate (requer sudo)"
-	@if [ ! -f /etc/logrotate.d/condominio-scenario ]; then echo "[WARN] /etc/logrotate.d/condominio-scenario não encontrado. Rode 'make install-logrotate' primeiro"; fi
-	-sudo logrotate -f /etc/logrotate.d/condominio-scenario || (echo "[WARN] logrotate retornou erro (verifique /var/log/messages ou syslog)")
-	@echo "[run-logrotate] Execução concluída (ou falhou com aviso)."
+	@echo "[info] Use the maintenance scripts in scripts/maintenance to run logrotate"
+	@sh scripts/maintenance/run-logrotate.sh
 
 truncate-logs:
-	@echo "[truncate-logs] Truncando logs grandes em deploy/logs para liberar espaço imediato (requer sudo)"
-	@for f in deploy/logs/*.log; do \
-		echo "[truncate] truncating $$f to 0 bytes"; \
-		sudo truncate -s 0 "$$f" || echo "[WARN] failed to truncate $$f"; \
-	done
-	@echo "[truncate-logs] Truncation attempted on matching logs."
+	@echo "[info] Use the maintenance scripts in scripts/maintenance to truncate logs"
+	@sh scripts/maintenance/truncate-logs.sh
 
 # === BUILD DE IMAGENS ===
 .PHONY: build-images rebuild-images
@@ -179,20 +160,18 @@ rebuild-images:
 
 # === USABILITY ALIASES E WORKFLOWS ===
 # Comandos mais intuitivos para o dia-a-dia: imagens, containers e um fluxo dev rápido
-.PHONY: help images-build images-rebuild containers-recreate dev ps logs-sim
+.PHONY: help images-build containers-recreate dev ps logs-sim
 
 help:
 	@echo "Uso: make <target>"
 	@echo "Grupos principais:"
 	@echo "  images-build        -> Reconstruir imagens (igual a make build-images)"
-	@echo "  images-rebuild      -> Rebuild completo (igual a make rebuild-images)"
 	@echo "  containers-recreate -> Remove um container mn.<SERVICE> (use SERVICE=tb)"
 	@echo "  dev                 -> Fluxo rápido (remove containers, build images, executa topo)"
 	@echo "  topo                -> Inicia a topologia (containernet) com perfil test05_best_performance por padrão"
 	@echo "  quick-start         -> Inicia topologia com perfil Test #5 (melhor performance)"
 	@echo "  odte                -> Executa experimento ODTE e gera relatórios (PROFILE=urllc DURATION=1800)"
 	@echo "  odte-full           -> Workflow completo com graceful shutdown (Ctrl+C salva dados)"
-	@echo "  odte-graceful       -> Alias para odte-full (compatibilidade)"
 	@echo "  analyze-latest      -> Análise inteligente do teste URLLC mais recente"
 	@echo "  intelligent-analysis -> Análise inteligente de teste específico (TEST_DIR=<path>)"
 	@echo "  compare-urllc       -> Comparação evolutiva de todos os testes URLLC"
@@ -237,8 +216,6 @@ help:
 images-build:
 	@$(MAKE) build-images
 
-images-rebuild:
-	@$(MAKE) rebuild-images
 
 containers-recreate:
 	@if [ -z "$(SERVICE)" ]; then echo "[USO] make containers-recreate SERVICE=tb"; exit 1; fi
@@ -272,7 +249,7 @@ stop-parser:
 	-@docker rm -f parser || true
 	@echo "[stop-parser] Done."
 # === TOPOLOGIA E VISUALIZAÇÃO ===
-.PHONY: topo topo-screen draw
+.PHONY: topo topo-screen draw topo-rpc-ultra topo-rpc-extreme topo-rpc-reduced_loads
 
 topo:
 	@echo "[📡] Executando topologia com Containernet"
@@ -292,7 +269,7 @@ topo:
 	@# Apply CONFIG_PROFILE with default to reduced_load
 	@config_profile="$${CONFIG_PROFILE:-reduced_load}"; \
 	echo "[🎯] Aplicando perfil de configuração: $$config_profile"; \
-	if ./scripts/apply_profile_hotswap.sh "$$config_profile"; then \
+	if ./scripts/filters/apply_profile_hotswap.sh "$$config_profile"; then \
 		echo "✅ Perfil aplicado via hot-swap"; \
 	else \
 		echo "⚠️ Hot-swap falhou, aplicando via método tradicional..."; \
@@ -313,6 +290,15 @@ topo:
 	fi; \
 	echo "[topo] PROFILE=$$profile"; \
 	sh scripts/run_topo.sh "$$profile"
+
+topo-rpc-ultra:
+	@$(MAKE) topo PROFILE=urllc CONFIG_PROFILE=ultra_aggressive
+
+topo-rpc-extreme:
+	@$(MAKE) topo PROFILE=urllc CONFIG_PROFILE=extreme_performance
+
+topo-rpc-reduced_loads:
+	@$(MAKE) topo PROFILE=urllc CONFIG_PROFILE=reduced_loads
 
 .PHONY: urllc best_effort eMBB test05-best rpc-ultra reduced-load network-opt baseline apply-profile apply-profile-restart
 
@@ -350,7 +336,7 @@ apply-profile:
 		echo "📁 Perfis disponíveis: test05_best_performance, rpc_ultra_aggressive, network_optimized, baseline_default"; \
 		exit 1; \
 	fi
-	@./scripts/apply_profile_hotswap.sh "$(CONFIG_PROFILE)"
+	@./scripts/filters/apply_profile_hotswap.sh "$(CONFIG_PROFILE)"
 
 # Apply configuration profile WITH safe ThingsBoard restart
 apply-profile-restart:
@@ -359,7 +345,7 @@ apply-profile-restart:
 		echo "📁 Perfis disponíveis: test05_best_performance, rpc_ultra_aggressive, network_optimized, baseline_default"; \
 		exit 1; \
 	fi
-	@./scripts/apply_profile_safe_restart.sh "$(CONFIG_PROFILE)"
+	@./scripts/filters/apply_profile_safe_restart.sh "$(CONFIG_PROFILE)"
 
 # Quick start with best performance profile (default)
 quick-start:
@@ -369,7 +355,7 @@ quick-start:
 # Quick restart with Test #5 (best known configuration)
 quick-restore:
 	@echo "🚀 Aplicando Test #5 (melhor configuração conhecida)..."
-	@./scripts/apply_profile_hotswap.sh test05_best_performance
+	@./scripts/filters/apply_profile_hotswap.sh test05_best_performance
 
 .PHONY: cenario_test
 
@@ -392,7 +378,7 @@ odte:
 	@profile="$${PROFILE:-urllc}"; duration="$${DURATION:-1800}"; \
 	echo "[📡] Executando topologia e cenário ODTE..."; \
 	echo "[⏱️] Duração: $${duration}s | Perfil: $$profile"; \
-	SCHEDULE_FILE=/dev/null bash scripts/apply_slice.sh "$$profile" --execute-scenario "$$duration" 2>/dev/null || echo "[⚠️] Possíveis warnings durante execução (normal)"
+	SCHEDULE_FILE=/dev/null bash scripts/slice/apply_slice.sh "$$profile" --execute-scenario "$$duration" 2>/dev/null || echo "[⚠️] Possíveis warnings durante execução (normal)"
 
 
 # Stop topology helper: best-effort terminate process and cleanup netns
@@ -408,46 +394,13 @@ stop-topo:
 	-docker network ls --filter "name=mn." -q | xargs -r docker network rm || true; \
 	@echo "[🧹] Topology stop attempted. If processes remain, inspect with 'ps aux | grep topo' or 'docker ps'."
 
-# Run a single profile: start topo, wait for readiness, run odte-full, stop topo
-.PHONY: run-scenario-profile
-run-scenario-profile:
-	@profile="$${PROFILE}"; duration="$${DURATION:-300}"; wait_timeout="$${WAIT_TIMEOUT:-300}"; \
-	if [ -z "$$profile" ]; then echo "Usage: make run-scenario-profile PROFILE=<profile> [DURATION=<s>]"; exit 1; fi; \
-	# Start topology for the profile inside a detached screen session
-	$(MAKE) topo-screen PROFILE=$$profile; \
-	# Wait for topology readiness using scripts/wait_topology_ready.sh (checks docker + screen logs)
-	echo "[⏳] Waiting for topology readiness (timeout=$$wait_timeout s)..."; \
-	if scripts/wait_topology_ready.sh $$wait_timeout; then \
-		echo "[✅] Topology ready. Running odte-full for profile $$profile (duration=$$duration)..."; \
-		$(MAKE) odte-full PROFILE=$$profile DURATION=$$duration; \
-	else \
-		echo "[ERROR] Topology did not become ready within $$wait_timeout seconds"; \
-		$(MAKE) stop-topo; \
-		exit 2; \
-	fi; \
-	# After run, stop topology
-	$(MAKE) stop-topo; \
-	echo "[ℹ️] run-scenario-profile for $$profile finished."
-
-# Composite: run URLLC, eMBB, best_effort sequentially with configurable DURATION (default 300s)
-.PHONY: run-all-scenarios
-run-all-scenarios:
-	@duration="$${DURATION:-300}"; \
-	echo "[▶️] Running full scenario suite: URLLC -> eMBB -> best_effort (duration=$$duration)"; \
-	# 1) URLLC
-	$(MAKE) run-scenario-profile PROFILE=urllc DURATION=$$duration; \
-	# 2) eMBB
-	$(MAKE) run-scenario-profile PROFILE=eMBB DURATION=$$duration; \
-	# 3) best_effort
-	$(MAKE) run-scenario-profile PROFILE=best_effort DURATION=$$duration; \
-	echo "[✅] run-all-scenarios completed."
 
 .PHONY: plots
 # Generate comprehensive visualization plots from the latest generated reports
 # Usage: make plots [REPORTS_DIR=results/generated_reports]
 plots:
 	@echo "[docs] Gerando seção de artigo (article/sections/evaluation.tex) a partir dos relatórios mais recentes"
-	@python3 scripts/render_article.py || (echo "[WARN] render failed; ensure requirements in requirements-docs.txt are installed"; exit 1)
+	@python3 scripts/reports/render_article.py || (echo "[WARN] render failed; ensure requirements in local.txt are installed"; exit 1)
 
 	@reports_dir="$${REPORTS_DIR:-results/generated_reports}"; \
 	echo "[📊] Gerando gráficos em $$reports_dir..."; \
@@ -481,7 +434,7 @@ odte-monitored:
 	echo "[⏱️] Duração: $${duration}s | Perfil: $$profile"; \
 	PROFILE=$$profile bash scripts/show_current_config.sh; \
 	echo "[1/3] Iniciando monitoramento em background..."; \
-	bash scripts/monitor_during_test.sh "$$duration" & \
+	bash scripts/monitor/monitor_during_test.sh "$$duration" & \
 	MONITOR_PID=$$!; \
 	echo "[2/3] Executando teste ODTE..."; \
 	$(MAKE) odte PROFILE=$$profile DURATION=$$duration; \
@@ -489,19 +442,10 @@ odte-monitored:
 	wait $$MONITOR_PID; \
 	echo "✅ Teste ODTE com monitoramento concluído!"
 
-.PHONY: odte-graceful odte-full
-# Graceful ODTE workflow with Ctrl+C interrupt handling
-# Usage: make odte-graceful [PROFILE=auto|urllc|embb|best_effort] [DURATION=1800]
-# Features: Ctrl+C saves partial results instead of losing all data
-odte-graceful:
-	@echo "[🛡️] Starting graceful ODTE workflow with interrupt handling..."; \
-	profile="$${PROFILE:-auto}"; duration="$${DURATION:-1800}"; \
-	chmod +x scripts/graceful_odte.sh; \
-	./scripts/graceful_odte.sh "$$profile" "$$duration"
-
-# Complete ODTE workflow: run experiment, generate analysis and plots
+# phony: only keep odte-full
+.PHONY: odte-full
+# Complete ODTE workflow: run experiment, generate analysis and plots with graceful shutdown
 # Usage: make odte-full [PROFILE=auto|urllc|embb|best_effort] [DURATION=1800] [REPORTS_DIR=auto]
-# Features: Graceful shutdown with Ctrl+C handling (saves partial results)
 odte-full:
 	@echo "[🚀] Starting complete ODTE workflow with graceful shutdown..."; \
 	profile="$${PROFILE:-auto}"; duration="$${DURATION:-1800}"; \
@@ -533,7 +477,7 @@ summary:
 # Organize test reports by timestamp
 organize-reports:
 	@echo "[📁] Organizando relatórios de teste..."
-	@bash scripts/organize_reports.sh
+	@bash scripts/reports/organize_reports.sh
 
 # Apply URLLC optimizations manually (usually done automatically)
 apply-urllc:

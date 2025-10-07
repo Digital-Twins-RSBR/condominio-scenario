@@ -84,6 +84,26 @@ echo "###############################################"
 mkdir -p /var/lib/tb-data /var/log/tb /var/lib/pg-data
 chmod 777 /var/lib/tb-data /var/log/tb /var/lib/pg-data
 
+echo "###############################################"
+echo "📚 [6.5/7] Instalando dependências de documentação e relatórios (requirements/local.txt)"
+echo "###############################################"
+if [ -f requirements/local.txt ]; then
+  # Use a local virtualenv to avoid installing into system-managed Python (PEP 668)
+  DOCS_VENV=".venv-docs"
+  if [ ! -d "$DOCS_VENV" ]; then
+    python3 -m venv "$DOCS_VENV" || { echo "[WARN] falha ao criar virtualenv $DOCS_VENV"; }
+  fi
+  # Activate and install requirements without sudo
+  # shellcheck disable=SC1091
+  . "$DOCS_VENV/bin/activate"
+  pip install --upgrade pip setuptools wheel
+  pip install -r requirements/local.txt || echo "[WARN] Falha ao instalar requirements-docs (ignore se já estiverem instalados)"
+  deactivate
+  echo "✅ Installed docs requirements into $DOCS_VENV"
+else
+  echo "[WARN] requirements/local.txt não encontrado, pulando"
+fi
+
 
 echo "###############################################"
 echo "🏁 [7/7] Ambiente pronto"

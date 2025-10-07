@@ -9,22 +9,28 @@ The discussion is structured as follows: first, latency distributions and compli
 
 The latency distributions measured for both communication directions revealed distinct patterns between the URLLC and eMBB profiles.
 
-\paragraph{URLLC (best test: test_20251006T215844Z_urllc)}
+\paragraph{URLLC (best test: test_20251007T165815Z_urllc)}
 \begin{itemize}
-  \item S2M (Sensor $\rightarrow$ Middleware): Mean = 72.0 ms; P95 = 144.6 ms; Compliance (<200 ms) = 100.0\%.
-  \item M2S (Middleware $\rightarrow$ Sensor): Mean = 276.7 ms; P95 = 512.4 ms; Compliance (<200 ms) = 81.0\%.
+  \item S2M (Sensor $\rightarrow$ Middleware): Mean = 124.8 ms; P95 = 173.8 ms; Compliance (<200 ms) = 76.0\%.
+  \item M2S (Middleware $\rightarrow$ Sensor): Mean = 199.3 ms; P95 = 605.3 ms; Compliance (<200 ms) = 89.4\%.
 \end{itemize}
 
 \begin{figure}[ht]
   \centering
   
+    \includegraphics[width=0.45\linewidth]{ article/plots/urllc/urllc_latency_comparison.png }
+  
+    \includegraphics[width=0.45\linewidth]{ article/plots/urllc/urllc_odte_analysis.png }
+  
+    \includegraphics[width=0.45\linewidth]{ article/plots/urllc/urllc_problem_analysis.png }
+  
   \caption{Selected plots for URLLC best test (latency distribution and ODTE analysis).}
 \end{figure}
 
-\paragraph{eMBB (best test: n/a)}
+\paragraph{eMBB (best test: test_20251007T171958Z_embb)}
 \begin{itemize}
-  \item S2M (Sensor $\rightarrow$ Middleware): Mean = 0.0 ms; P95 = 0.0 ms; Compliance (<200 ms) = 0.0\%.
-  \item M2S (Middleware $\rightarrow$ Sensor): Mean = 0.0 ms; P95 = 0.0 ms; Compliance (<200 ms) = 0.0\%.
+  \item S2M (Sensor $\rightarrow$ Middleware): Mean = 7635.5 ms; P95 = 9479.2 ms; Compliance (<200 ms) = 0.0\%.
+  \item M2S (Middleware $\rightarrow$ Sensor): Mean = 1527.2 ms; P95 = 1794.2 ms; Compliance (<200 ms) = 0.0\%.
 \end{itemize}
 
 \begin{figure}[ht]
@@ -35,16 +41,16 @@ The latency distributions measured for both communication directions revealed di
 
 \subsubsection{Reliability and Availability Trends}
 
-For the URLLC scenario, message delivery reliability (received/sent) was estimated as: S2M reliability = 0.707, M2S reliability = 0.408. Availability (A) averaged 68.79\% (weighted A = 59.85\%).
+For the URLLC scenario, message delivery reliability (received/sent) was estimated as: S2M reliability = 1.000, M2S reliability = 0.402. Availability (A) averaged 63.54\% (weighted A = 63.60\%).
 
-For the eMBB scenario, S2M reliability = 0.000, M2S reliability = 0.000. Availability (A) averaged 0.00\% (weighted A = 0.00\%).
+For the eMBB scenario, S2M reliability = 0.166, M2S reliability = 0.519. Availability (A) averaged 51.03\% (weighted A = 51.48\%).
 
 \subsubsection{ODTE Synthesis and Comparative Evaluation}
 
 The ODTE synthesis yields:
 \begin{itemize}
-  \item URLLC (operational): ODTE = 30.9\%.
-  \item URLLC (optimized bidirectional): ODTE = 30.9\%.
+  \item URLLC (operational): ODTE = 36.7\%.
+  \item URLLC (optimized bidirectional): ODTE = 36.7\%.
   \item eMBB (aggregated): ODTE = 0.0\% (± 0.0).
 \end{itemize}
 

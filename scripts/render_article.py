@@ -8,6 +8,7 @@ import sys
 import os
 from pathlib import Path
 import json
+import subprocess
 import glob
 import shutil
 import pandas as pd
@@ -294,6 +295,87 @@ def collect_plots_and_details_for_profile(profile_entry, repo: Path):
     return profile_entry
 
 
+def snapshot_generated_reports(profiles, repo: Path):
+    """Copy the generated_reports used for each selected profile into article/data/<profile>/<test_name>/
+    This preserves the exact CSVs used to build the article figures.
+    """
+    base_out = repo / 'article' / 'data'
+    base_out.mkdir(parents=True, exist_ok=True)
+    for p in profiles:
+        gen_dir = p.get('generated_dir')
+        if not gen_dir:
+            print(f"No generated_dir for profile {p.get('name')}, skipping snapshot")
+            continue
+        src = Path(gen_dir)
+        if not src.exists():
+            print(f"Generated reports dir not found: {src}, skipping")
+            continue
+        # destination: article/data/<profile>/<test_name>/
+        prof_name = str(p.get('name','unknown')).lower().replace(' ', '_')
+        test_name = str(p.get('test_name','unknown')).replace(' ', '_')
+        dst = base_out / prof_name / test_name
+        # remove existing snapshot if present to ensure a clean copy
+        if dst.exists():
+            try:
+                shutil.rmtree(dst)
+            except Exception as e:
+                print('Warning: could not remove existing snapshot', dst, e)
+        try:
+            shutil.copytree(src, dst)
+            print(f'Copied generated reports for {prof_name} -> {dst}')
+        except Exception as e:
+            print(f'Warning: failed to copy {src} to {dst}:', e)
+
+
+def run_all_plots(repo: Path):
+    """Run the project plot generator script (PNG-only) to produce article/plots outputs."""
+    script = repo / 'scripts' / 'plots' / 'generate_all_plots.sh'
+    if not script.exists():
+        print('Plot generator script not found:', script)
+        return
+    try:
+        print('Running plot generator...')
+        subprocess.run(['sh', str(script)], cwd=str(repo), check=False)
+    except Exception as e:
+        print('Warning: plot generation failed:', e)
+
+
+def run_topology_generators(repo: Path):
+    """Run both static and live topology visualizer scripts and copy PNG outputs to article/plots."""
+    topo_out = repo / 'topology_output'
+    topo_out.mkdir(parents=True, exist_ok=True)
+    plots_dir = repo / 'article' / 'plots'
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1) Static visualizer
+    viz = repo / 'services' / 'topology' / 'topology_visualizer.py'
+    if viz.exists():
+        try:
+            print('Running topology_visualizer.py...')
+            subprocess.run([sys.executable, str(viz), '--sims', '6', '--output', str(topo_out), '--filename', 'condominio_topology'], cwd=str(repo), check=False)
+        except Exception as e:
+            print('Warning: topology_visualizer failed:', e)
+
+    # 2) Live capture wrapper (generate report based on topology_output)
+    live = repo / 'services' / 'topology' / 'live_topology_capture.py'
+    if live.exists():
+        try:
+            print('Running live_topology_capture.py --report...')
+            subprocess.run([sys.executable, str(live), '--report', '--output', str(topo_out)], cwd=str(repo), check=False)
+        except Exception as e:
+            print('Warning: live_topology_capture failed:', e)
+
+    # copy produced PNGs into article/plots
+    for fname in ('condominio_topology_main.png', 'condominio_topology_hierarchical.png'):
+        f = topo_out / fname
+        if f.exists():
+            try:
+                shutil.copy2(f, plots_dir / f.name)
+                print('Copied topology image to article/plots/', f.name)
+            except Exception as e:
+                print('Warning: failed to copy topology image', f, e)
+
+
 def compute_latency_stats_for_test(generated_dir: Path):
     """Return dict with mean, p95 and compliance (<200ms) for S2M and M2S for a given generated_reports dir."""
     g = Path(generated_dir)
@@ -465,7 +547,7 @@ def extract_section_5_3_text(repo: Path) -> str:
     This performs a best-effort RTF->plaintext extraction focused on the 5.3 heading
     and does minimal LaTeX escaping so the text can be embedded into the .tex fragment.
     """
-    rtf_path = repo / 'article.rtf'
+    rtf_path = repo / 'article/article.rtf'
     if not rtf_path.exists():
         return ''
     raw = rtf_path.read_text(errors='ignore')

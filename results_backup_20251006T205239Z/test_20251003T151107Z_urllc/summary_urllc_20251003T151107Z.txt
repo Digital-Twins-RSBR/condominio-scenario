@@ -1,6 +1,0 @@
-profile: urllc
-start: 2025-10-03T15:11:07Z
-duration_seconds: 300
-bucket_export: skipped
-reports_dir: results/test_20251003T151107Z_urllc
-note: check logs for screen session: screen -r topo

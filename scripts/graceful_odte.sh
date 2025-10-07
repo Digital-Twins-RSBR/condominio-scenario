@@ -175,28 +175,21 @@ log "💡 Press Ctrl+C at any time for graceful shutdown with partial results"
     
     log "🎯 ODTE started (PID: $ODTE_PID)"
     
-    # Start intelligent filter application in background after 60 seconds
-    (
-        sleep 60
-        log "🔧 Starting intelligent filter application..."
-        # Collect ThingsBoard IDs via helper (or use TB_IDS env if set)
-        TB_IDS=$(./scripts/get_thingsboard_ids.sh || true)
-        if [ -n "$TB_IDS" ]; then
-            log "🔑 Collected ThingsBoard IDs: $(echo "$TB_IDS" | wc -w)"
-            export TB_IDS
-        else
-            log "⚠️ No ThingsBoard IDs collected; filter will attempt DB queries or fallback"
-        fi
-        ./scripts/apply_comprehensive_filter.sh || warn "⚠️ Filter skipped"
-    ) &
-    FILTER_PID=$!
+    # Intentionally skip intelligent filter application: run with ALL devices.
+    # This avoids brittle house-name based detection and ensures the updater
+    # processes every device. Analysis later will filter to bidirectional
+    # devices only.
+    log "� Skipping intelligent filter: updater will run for ALL devices"
+    FILTER_PID=""
     
     # Wait for ODTE to complete
     wait "$ODTE_PID"
     ODTE_EXIT_CODE=$?
     
-    # Wait for filter to complete
-    wait "$FILTER_PID" 2>/dev/null || true
+    # Wait for filter to complete (only if we started one)
+    if [ -n "$FILTER_PID" ]; then
+        wait "$FILTER_PID" 2>/dev/null || true
+    fi
     
     if [ $ODTE_EXIT_CODE -ne 0 ]; then
         error "ODTE experiment failed with exit code $ODTE_EXIT_CODE"
@@ -228,6 +221,24 @@ if [ ! -d "$reports_dir" ]; then
 fi
 
 log "[2/4] Performing detailed latency analysis..."
+# Generate bidirectional-only data and replace ODTE CSV so all downstream
+# analyses use only bidirectional devices (telemetry + RPC).
+log "🔎 Generating bidirectional-only dataset (telemetry ∩ RPC)"
+if python3 scripts/analyze_bidirectional.py "$reports_dir"; then
+    # If a filtered CSV was created, replace the original urllc_odte CSV with it
+    FILTERED_CSV=$(ls "$reports_dir"/filtered_odte_*.csv 2>/dev/null | head -n1 || true)
+    ORIG_CSV=$(ls "$reports_dir"/urllc_odte_*.csv 2>/dev/null | head -n1 || true)
+    if [ -n "$FILTERED_CSV" ] && [ -n "$ORIG_CSV" ]; then
+        log "🔁 Replacing original ODTE CSV with filtered bidirectional CSV"
+        cp "$ORIG_CSV" "${ORIG_CSV}.bak" || true
+        mv -f "$FILTERED_CSV" "$ORIG_CSV" || cp -f "$FILTERED_CSV" "$ORIG_CSV"
+    else
+        log "⚠️ No filtered CSV found; continuing with original ODTE CSV"
+    fi
+else
+    warn "⚠️ Bidirectional analysis failed; continuing with original ODTE CSV"
+fi
+
 python3 scripts/report_generators/latency_analysis.py "$reports_dir" || {
     error "Latency analysis failed"
     exit 1

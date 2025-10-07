@@ -96,6 +96,9 @@ mkdir -p "$RESULTS_DIR"
 mkdir -p "$TEST_DIR"
 echo "[🗂️] Test results will be organized in: $TEST_DIR"
 
+# persistent scheduler pid file so repeated runs can detect/kill previous scheduler
+SCHED_PID_FILE="${RESULTS_DIR}/condominio_scheduler.pid"
+
 log() { echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] $*"; }
 
 log "Starting topology in screen (PROFILE=$PROFILE)..."
@@ -346,6 +349,8 @@ start_scheduler() {
     done < "$schedule"
   ) &
   SCHED_PID=$!
+  # persist pid so later runs can find and stop this scheduler
+  echo "$SCHED_PID" > "${SCHED_PID_FILE}" 2>/dev/null || true
   log "Scheduler started (PID $SCHED_PID)"
 }
 
@@ -406,6 +411,7 @@ start_builtin_scheduler() {
     done
   ) &
   SCHED_PID=$!
+  echo "$SCHED_PID" > "${SCHED_PID_FILE}" 2>/dev/null || true
   log "Builtin scheduler started (PID $SCHED_PID)"
 }
 
@@ -417,8 +423,36 @@ start_middts_update() {
     # ALWAYS stop existing update_causal_property to avoid concurrent processes
     log "Stopping any existing update_causal_property in $MID_CNT"
     docker exec "$MID_CNT" bash -lc "pkill -f 'manage.py update_causal_property' || true; rm -f /tmp/update_causal_property.pid || true" 2>/dev/null || true
-    sleep 2  # Extra time for cleanup
+    sleep 1  # Extra time for cleanup
+
+    # If a pid file exists inside the container but the process is gone, remove stale pidfile.
+    RUNNING_PID_CHECK=$(docker exec "$MID_CNT" bash -lc "if [ -f /tmp/update_causal_property.pid ]; then pid=\$(cat /tmp/update_causal_property.pid 2>/dev/null || true); if [ -n \"\$pid\" ]; then if ps -p \$pid >/dev/null 2>&1; then echo running; else rm -f /tmp/update_causal_property.pid; echo stale; fi; fi; fi" 2>/dev/null || true)
+    if [ "${RUNNING_PID_CHECK}" = "running" ]; then
+      log "update_causal_property already running in $MID_CNT (pidfile present); skipping start"
+      return 0
+    fi
     
+    # Ensure core services are reachable before starting the updater to avoid missed RPCs/exports
+    log "Ensuring InfluxDB and ThingsBoard are reachable before starting update_causal_property"
+    # wait up to 60s for Influx /health and TB HTTP port
+    wait_seconds=0
+    max_wait=60
+    while [ $wait_seconds -lt $max_wait ]; do
+      # check Influx health (use host name from environment inside container if available)
+      docker exec "$MID_CNT" bash -lc "(if [ -f /middleware-dt/.env ]; then set -a; . /middleware-dt/.env; set +a; fi; curl -sS --max-time 2 \"http://${INFLUXDB_HOST:-mn.influxdb}:${INFLUXDB_PORT:-8086}/health\" >/dev/null 2>&1)" && influx_ok=1 || influx_ok=0
+      # check ThingsBoard HTTP (default 8080) using host from env if present
+      docker exec "$MID_CNT" bash -lc "(if [ -f /middleware-dt/.env ]; then set -a; . /middleware-dt/.env; set +a; fi; curl -sS --max-time 2 \"http://${THINGSBOARD_HOST:-thingsboard}:${THINGSBOARD_PORT:-8080}/api/status\" >/dev/null 2>&1)" && tb_ok=1 || tb_ok=0
+      if [ "$influx_ok" -eq 1 ] && [ "$tb_ok" -eq 1 ]; then
+        log "InfluxDB and ThingsBoard reachable from middts container"
+        break
+      fi
+      sleep 2
+      wait_seconds=$((wait_seconds+2))
+    done
+    if [ $wait_seconds -ge $max_wait ]; then
+      log "Warning: timed out waiting for Influx/ThingsBoard readiness (waited ${max_wait}s). Proceeding anyway."
+    fi
+
     log "Starting update_causal_property in container: $MID_CNT"
     # Source middts .env inside the container so INFLUX/NEO4J vars are available
     docker exec -d "$MID_CNT" bash -lc "if [ -f /middleware-dt/.env ]; then set -a; . /middleware-dt/.env; set +a; fi; cd /var/condominio-scenario/services/middleware-dt || true; nohup python3 manage.py update_causal_property > /middleware-dt/update_causal_property.out 2>&1 & echo \$! >/tmp/update_causal_property.pid" || log "Failed to exec update_causal_property (non-fatal)"
@@ -444,16 +478,31 @@ start_simulators() {
     
     # ALWAYS stop existing send_telemetry to avoid concurrent processes
     log "Stopping any existing send_telemetry in $s"
-    docker exec "$s" bash -lc "pkill -f 'manage.py send_telemetry' || true; rm -f /tmp/send_telemetry.pid || true" 2>/dev/null || true
-    sleep 1
-    
-    log "Starting send_telemetry in $s"
+    docker exec "$s" bash -lc "pkill -f 'manage.py send_telemetry' || true; " 2>/dev/null || true
+    sleep 0.5
+
+    # If pidfile exists in container and process is alive, skip starting a new one
+    SIM_RUNNING=$(docker exec "$s" bash -lc "if [ -f /tmp/send_telemetry.pid ]; then pid=\$(cat /tmp/send_telemetry.pid 2>/dev/null || true); if [ -n \"\$pid\" ]; then if ps -p \$pid >/dev/null 2>&1; then echo running; else rm -f /tmp/send_telemetry.pid; echo stale; fi; fi; fi" 2>/dev/null || true)
+    if [ "${SIM_RUNNING}" = "running" ]; then
+      log "send_telemetry already running in $s (pidfile present); skipping start"
+    else
+      log "Starting send_telemetry in $s"
     # start with --randomize to vary sensor timestamps and avoid deterministic collisions
     # Ensure .env exists inside the container (copy from .env.example if present)
     docker exec "$s" bash -lc "if [ ! -f /iot_simulator/.env ] && [ -f /iot_simulator/.env.example ]; then echo '[auto] copying .env.example -> .env inside container'; cp /iot_simulator/.env.example /iot_simulator/.env; fi" >/dev/null 2>&1 || true
     # Source the container's .env so THINGSBOARD_* and INFLUX_* are available to the process
     # HEARTBEAT_INTERVAL and optimizations are now set by default in Dockerfile
-    docker exec -d "$s" bash -lc "if [ -f /iot_simulator/.env ]; then set -a; . /iot_simulator/.env; set +a; fi; cd /iot_simulator || true; nohup python3 manage.py send_telemetry --use-influxdb --randomize > /iot_simulator/send_telemetry.out 2>&1 & echo \$! >/tmp/send_telemetry.pid" || log "Failed to start send_telemetry in $s"
+    # Start simulators with in-memory mode and Influx enabled by default
+    # Use SIM_NO_INFLUX=1 in the container .env to disable Influx writes when needed
+      docker exec -d "$s" bash -lc "if [ -f /iot_simulator/.env ]; then set -a; . /iot_simulator/.env; set +a; fi; cd /iot_simulator || true; \ 
+    # Default flags: enable Influx and memory mode
+    NO_INFLUX=\"\"; \ 
+    if [ \"\${SIM_NO_INFLUX:-}\" = \"1\" ] || [ \"\${SIM_NO_INFLUX:-}\" = \"true\" ]; then \ 
+      NO_INFLUX=\"--no-influx\"; \ 
+    fi; \ 
+    MEMORY_FLAG=\"--memory\"; \ 
+    RANDOMIZE_FLAG=\"--randomize\"; \ 
+    nohup python3 manage.py send_telemetry --use-influxdb \$RANDOMIZE_FLAG \$MEMORY_FLAG > /iot_simulator/send_telemetry.out 2>&1 & echo \$! >/tmp/send_telemetry.pid" || log "Failed to start send_telemetry in $s"
     # warn if THINGSBOARD credentials missing inside the container env file
     if ! docker exec "$s" bash -lc "[ -f /iot_simulator/.env ] && grep -q '^THINGSBOARD_USER=' /iot_simulator/.env >/dev/null 2>&1"; then
       log "Warning: THINGSBOARD_USER not found in /iot_simulator/.env inside $s"
@@ -462,6 +511,7 @@ start_simulators() {
       log "Warning: THINGSBOARD_PASSWORD not found in /iot_simulator/.env inside $s"
     fi
     sleep 0.5
+    fi
   done
 }
 
@@ -537,20 +587,29 @@ log "Now stopping processes after data capture..."
 # stop update_causal_property
 if [ -n "$MID_CNT" ]; then
   log "Stopping update_causal_property in $MID_CNT"
-  docker exec "$MID_CNT" bash -lc "pkill -f update_causal_property || true; pkill -f manage.py || true" || true
+  docker exec "$MID_CNT" bash -lc "pkill -f update_causal_property || true; pkill -f manage.py || true; rm -f /tmp/update_causal_property.pid || true" || true
 fi
 
 # stop all simulators' send_telemetry and scenario_runner
 docker ps --format '{{.Names}}' | grep -E 'sim[_-]?[0-9]+' | while read -r simc; do
   [ -z "$simc" ] && continue
   log "Stopping send_telemetry/scenario_runner on $simc"
-  docker exec "$simc" bash -lc "pkill -f send_telemetry || true; pkill -f scenario_runner.py || true; pkill -f python3 manage.py || true" || true
+  docker exec "$simc" bash -lc "pkill -f send_telemetry || true; pkill -f scenario_runner.py || true; pkill -f python3 manage.py || true; rm -f /tmp/send_telemetry.pid || true" || true
 done
 
 # stop scheduler if running
 if [ -n "${SCHED_PID:-}" ]; then
   log "Stopping scheduler (PID $SCHED_PID)"
   kill "$SCHED_PID" 2>/dev/null || true
+fi
+# also check for persisted scheduler pid from previous runs
+if [ -f "${SCHED_PID_FILE}" ]; then
+  oldpid=$(cat "${SCHED_PID_FILE}" 2>/dev/null || true)
+  if [ -n "$oldpid" ] && ps -p "$oldpid" >/dev/null 2>&1; then
+    log "Stopping previously persisted scheduler (PID $oldpid)"
+    kill "$oldpid" 2>/dev/null || true
+  fi
+  rm -f "${SCHED_PID_FILE}" 2>/dev/null || true
 fi
 
 # Clean up middleware HTTP sessions and connections to prevent accumulation
@@ -768,12 +827,30 @@ if [ -n "$ODTE_CSV" ]; then
       echo "mean_ODTE: $mean_odte" >> "$SUMMARY"
     fi
   else
-    echo "mean_T: $mean_T" >> "$SUMMARY"
-    echo "mean_R: $mean_R" >> "$SUMMARY"
-    echo "mean_A: $mean_A" >> "$SUMMARY"
+    # Defer writing mean_T/mean_R/mean_A to the Python helper which will
+    # compute richer statistics (means, medians) and append them to the
+    # summary in a consistent format.
+    log "ODTE components computed (deferred writing to metrics helper)"
   fi
 else
   log "No ODTE CSV found (${TEST_DIR}/generated_reports/${PROFILE}_odte_*.csv) — skipping T/R/A summary"
 fi
 
 log "You can review results in $TEST_DIR"
+
+# Compute extended run metrics (means, medians, counts, P95, cdf<=200) and
+# append them to the summary. This helper reads files under generated_reports.
+if [ -d "${TEST_DIR}/generated_reports" ]; then
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON=${PYTHON:-python3}
+    "$PYTHON" "${PWD}/scripts/_compute_run_metrics.py" \
+      --reports-dir "${TEST_DIR}/generated_reports" \
+      --profile "${PROFILE}" \
+      --odte "${ODTE_CSV}" \
+      --summary "${SUMMARY}" || log "Run metrics computation failed"
+  else
+    log "python3 not available; skipping extended run metrics computation"
+  fi
+else
+  log "No generated_reports directory (${TEST_DIR}/generated_reports); skipping extended metrics"
+fi
