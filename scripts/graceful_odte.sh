@@ -179,6 +179,14 @@ log "💡 Press Ctrl+C at any time for graceful shutdown with partial results"
     (
         sleep 60
         log "🔧 Starting intelligent filter application..."
+        # Collect ThingsBoard IDs via helper (or use TB_IDS env if set)
+        TB_IDS=$(./scripts/get_thingsboard_ids.sh || true)
+        if [ -n "$TB_IDS" ]; then
+            log "🔑 Collected ThingsBoard IDs: $(echo "$TB_IDS" | wc -w)"
+            export TB_IDS
+        else
+            log "⚠️ No ThingsBoard IDs collected; filter will attempt DB queries or fallback"
+        fi
         ./scripts/apply_comprehensive_filter.sh || warn "⚠️ Filter skipped"
     ) &
     FILTER_PID=$!

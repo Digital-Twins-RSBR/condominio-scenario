@@ -27,7 +27,14 @@ ALL_IDS=""
 TOTAL_IDS=0
 RETRIES=4
 SLEEP=2
-for attempt in $(seq 1 $RETRIES); do
+
+# If orchestration provided TB_IDS env var, prefer it
+if [ -n "${TB_IDS:-}" ]; then
+    echo "   🔁 Using TB_IDS provided by orchestrator"
+    ALL_IDS="$TB_IDS"
+    TOTAL_IDS=$(echo "$ALL_IDS" | wc -w)
+else
+    for attempt in $(seq 1 $RETRIES); do
     DJANGO_QUERY="
 from middleware.models import Device
 devices = Device.objects.all()
@@ -53,7 +60,7 @@ print(f'TOTAL_COUNT:{len(device_ids)}')
     sleep $SLEEP
 done
 
-if [ -z "$ALL_IDS" ] || [ "$TOTAL_IDS" -eq "0" ]; then
+    if [ -z "$ALL_IDS" ] || [ "$TOTAL_IDS" -eq "0" ]; then
     echo "   ❌ Consulta Django falhou após retries, tentando método alternativo (SQL)..."
     SQL_RESULT=$(docker exec mn.db psql -U postgres -d middts -tAc "SELECT thingsboard_id FROM middleware_device WHERE thingsboard_id IS NOT NULL;" 2>/dev/null || true)
     if [ -n "$SQL_RESULT" ]; then
