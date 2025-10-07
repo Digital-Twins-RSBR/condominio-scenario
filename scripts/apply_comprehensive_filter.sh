@@ -280,7 +280,7 @@ if [ "$PROCESS_RUNNING" -gt "0" ]; then
     echo "   docker exec mn.middts tail -f /middleware-dt/update_causal_property_abrangente.out"
     echo ""
     echo "📊 Para verificar conectividade em tempo real:"
-    echo "   ./scripts/monitor_realtime_connectivity.sh"
+    echo "   ./scripts/monitor/monitor_realtime_connectivity.sh"
     echo ""
     echo "🚀 PRÓXIMO TESTE:"
     echo "   make odte-full DURATION=300"

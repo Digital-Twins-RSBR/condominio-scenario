@@ -87,7 +87,7 @@ HTTP_REQUEST_TIMEOUT_MS: 750ms
 
 1. **Middleware**: `services/middleware-dt/orchestrator/management/commands/update_causal_property.py`
 2. **Scripts**: `scripts/apply_comprehensive_filter.sh`
-3. **Monitoring**: `scripts/monitor_realtime_connectivity.sh`
+3. **Monitoring**: `scripts/monitor/monitor_realtime_connectivity.sh`
 4. **Configuration**: Network shaping profiles
 
 ## 🔍 **INVESTIGAÇÕES FUTURAS**

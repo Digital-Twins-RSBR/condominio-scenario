@@ -26,7 +26,7 @@ Este projeto implementa um sistema completo de medição de latência Ultra-Reli
 make odte-full DURATION=300
 
 # 3. Monitorar em tempo real
-./scripts/monitor_realtime_connectivity.sh
+./scripts/monitor/monitor_realtime_connectivity.sh
 ```
 
 ## � OBJETIVOS ALCANÇADOS - OTIMIZAÇÃO COMPLETA (OUT/2025)
@@ -388,7 +388,7 @@ make odte-monitored DURATION=120
 
 ### Scripts de Análise
 - **`scripts/analyze_advanced_configs.sh`** - Análise de configurações JVM e ThingsBoard
-- **`scripts/monitor_during_test.sh`** - Monitoramento em tempo real com análise de gargalos
+- **`scripts/monitor/monitor_during_test.sh`** - Monitoramento em tempo real com análise de gargalos
 
 ---
 

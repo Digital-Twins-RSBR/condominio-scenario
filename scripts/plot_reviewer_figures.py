@@ -280,7 +280,7 @@ def create_topology_placeholder():
     ax.axis('off')
     ax.text(0.5,0.6,'Topology Diagram Placeholder', ha='center', fontsize=14)
     ax.text(0.5,0.45,'Containers: simulators, middts, thingsboard, influxdb', ha='center')
-    ax.text(0.5,0.35,'Link conditioning per profile: see scripts/apply_slice.sh', ha='center')
+    ax.text(0.5,0.35,'Link conditioning per profile: see scripts/slice/apply_slice.sh', ha='center')
     fig.tight_layout()
     out_png = os.path.join(PLOTS_DIR, 'fig5_topology_diagram.png')
     fig.savefig(out_png, dpi=200)

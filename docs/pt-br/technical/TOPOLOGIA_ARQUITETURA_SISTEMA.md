@@ -635,10 +635,10 @@ config/
 ./scripts/thingsboard_service.sh restart
 
 # Aplicação de perfil de configuração
-./scripts/apply_profile_hotswap.sh reduced_load
+./scripts/filters/apply_profile_hotswap.sh reduced_load
 
 # Monitoramento em tempo real
-./scripts/monitor_during_test.sh
+./scripts/monitor/monitor_during_test.sh
 ```
 
 ## 🚀 CASOS DE USO DA TOPOLOGIA
@@ -705,7 +705,7 @@ docker exec mn.tb netstat -tlnp
 #### 3. **Performance degradada:**
 ```bash
 # Monitorar CPU em tempo real
-./scripts/monitor_during_test.sh
+./scripts/monitor/monitor_during_test.sh
 
 # Verificar configuração atual
 ./scripts/show_current_config.sh
