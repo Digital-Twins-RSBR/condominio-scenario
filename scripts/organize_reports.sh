@@ -83,7 +83,7 @@ echo "Done. Organized outputs under $RESULTS_DIR."
 
 # Run visualizer automatically if present and there are generated reports
 GEN_DIR="$RESULTS_DIR/generated_reports"
-VISUALIZER="$ROOT_DIR/scripts/report_generators/visualize_reports.py"
+VISUALIZER="$ROOT_DIR/scripts/reports/report_generators/visualize_reports.py"
 if [ -d "$GEN_DIR" ] && [ -f "$VISUALIZER" ]; then
   echo "Running visualizer on $GEN_DIR"
   if command -v python3 >/dev/null 2>&1; then

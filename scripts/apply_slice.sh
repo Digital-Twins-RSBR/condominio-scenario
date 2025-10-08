@@ -779,7 +779,7 @@ if [ -f "${OUTFILE}" ]; then
   log "Generating reports from CSV export: ${OUTFILE} -> ${TEST_DIR}/generated_reports"
   # prefer the local venv/python if present; otherwise use system python3
   PYTHON=${PYTHON:-python3}
-  "$PYTHON" "${PWD}/scripts/report_generators/generate_reports_from_export.py" "${OUTFILE}" "${PROFILE}" "${TEST_DIR}/generated_reports" || log "Offline report generation failed"
+  "$PYTHON" "${PWD}/scripts/reports/report_generators/generate_reports_from_export.py" "${OUTFILE}" "${PROFILE}" "${TEST_DIR}/generated_reports" || log "Offline report generation failed"
 else
   log "No export CSV found (${OUTFILE}); skipping offline report generation"
 fi
@@ -843,7 +843,7 @@ log "You can review results in $TEST_DIR"
 if [ -d "${TEST_DIR}/generated_reports" ]; then
   if command -v python3 >/dev/null 2>&1; then
     PYTHON=${PYTHON:-python3}
-    "$PYTHON" "${PWD}/scripts/_compute_run_metrics.py" \
+  "$PYTHON" "${PWD}/scripts/reports/report_generators/_compute_run_metrics.py" \
       --reports-dir "${TEST_DIR}/generated_reports" \
       --profile "${PROFILE}" \
       --odte "${ODTE_CSV}" \

@@ -5,7 +5,8 @@ ROOT=$(dirname "$0")/..
 cd "$ROOT"
 PYTHON=${PYTHON:-python3}
 OUT_DIR="$ROOT/topology_output"
-PLOTS_DIR="$ROOT/article/plots"
+# article moved under scripts/reports/article
+PLOTS_DIR="$ROOT/scripts/reports/article/plots"
 mkdir -p "$PLOTS_DIR"
 
 # Run visualizer with a sensible default of 6 sims

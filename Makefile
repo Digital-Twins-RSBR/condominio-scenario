@@ -402,13 +402,13 @@ plots:
 	@echo "[docs] Gerando seção de artigo (article/sections/evaluation.tex) a partir dos relatórios mais recentes"
 	@python3 scripts/reports/render_article.py || (echo "[WARN] render failed; ensure requirements in local.txt are installed"; exit 1)
 
-	@reports_dir="$${REPORTS_DIR:-results/generated_reports}"; \
+	@reports_dir="$${REPORTS_DIR:-outputs/results/generated_reports}"; \
 	echo "[📊] Gerando gráficos em $$reports_dir..."; \
 	if [ ! -d "$$reports_dir" ]; then \
 		echo "❌ Diretório não encontrado: $$reports_dir"; \
 		exit 1; \
 	fi; \
-	python3 scripts/report_generators/enhanced_visualize.py "$$reports_dir" >/dev/null 2>&1 && \
+	python3 scripts/reports/report_generators/enhanced_visualize.py "$$reports_dir" >/dev/null 2>&1 && \
 	echo "✅ Gráficos gerados em $$reports_dir/plots/" || \
 	echo "❌ Erro na geração de gráficos"
 
@@ -416,7 +416,7 @@ plots:
 # Perform comprehensive text-based analysis of ODTE reports without visualization dependencies
 # Usage: make analyze [REPORTS_DIR=results/generated_reports]
 analyze:
-	@reports_dir="$${REPORTS_DIR:-results/generated_reports}"; \
+	@reports_dir="$${REPORTS_DIR:-outputs/results/generated_reports}"; \
 	echo "[🔍] Analisando relatórios em $$reports_dir..."; \
 	if [ ! -d "$$reports_dir" ]; then \
 		echo "❌ Diretório não encontrado: $$reports_dir"; \
@@ -889,7 +889,7 @@ intelligent-analysis:
 		exit 1; \
 	fi
 	@echo "🔍 Executando análise inteligente em $(TEST_DIR)..."
-	@python3 scripts/intelligent_test_analysis.py "$(TEST_DIR)"
+	@python3 scripts/reports/report_generators/intelligent_test_analysis.py "$(TEST_DIR)"
 
 # Run intelligent analysis on the most recent URLLC test
 analyze-latest:
@@ -905,12 +905,12 @@ analyze-latest:
 # Compare all URLLC tests and show evolution over time
 compare-urllc:
 	@echo "📊 Executando análise comparativa de todos os testes URLLC..."
-	@python3 scripts/compare_urllc_tests.py results/
+	@python3 scripts/reports/report_generators/compare_urllc_tests.py results/
 
 # Compare URLLC vs eMBB vs best_effort profiles
 compare-profiles:
 	@echo "⚔️ Executando comparação entre perfis de rede..."
-	@python3 scripts/compare_urllc_vs_embb.py
+	@python3 scripts/reports/report_generators/compare_urllc_vs_embb.py
 
 # Generate executive dashboard of current URLLC status
 dashboard:

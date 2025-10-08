@@ -16,6 +16,11 @@ from jinja2 import Environment, FileSystemLoader
 import re
 import html
 
+# Repository layout helpers: repo_root is the repository root (two levels up from this file)
+# ARTICLE_DIR is the moved article directory under scripts/reports/article
+REPO_ROOT = Path(__file__).resolve().parents[2]
+ARTICLE_DIR = Path(__file__).resolve().parents[1] / 'article'
+
 
 def find_latest_generated_reports(base: Path) -> Path:
     env_dir = os.environ.get('REPORTS_DIR')
@@ -222,7 +227,7 @@ def collect_plots_and_details_for_profile(profile_entry, repo: Path):
         imgs = []
 
     if imgs:
-        out_plots_dir = repo / 'article' / 'plots' / profile_dirname
+        out_plots_dir = ARTICLE_DIR / 'plots' / profile_dirname
         if out_plots_dir.exists():
             try:
                 shutil.rmtree(out_plots_dir)
@@ -269,7 +274,7 @@ def collect_plots_and_details_for_profile(profile_entry, repo: Path):
 
 
 def snapshot_generated_reports(profiles, repo: Path):
-    base_out = repo / 'article' / 'data'
+    base_out = ARTICLE_DIR / 'data'
     base_out.mkdir(parents=True, exist_ok=True)
     for p in profiles:
         gen_dir = p.get('generated_dir')
@@ -310,10 +315,10 @@ def run_all_plots(repo: Path):
 def run_topology_generators(repo: Path):
     topo_out = repo / 'topology_output'
     topo_out.mkdir(parents=True, exist_ok=True)
-    plots_dir = repo / 'article' / 'plots'
+    plots_dir = ARTICLE_DIR / 'plots'
     plots_dir.mkdir(parents=True, exist_ok=True)
 
-    viz = repo / 'services' / 'topology' / 'topology_visualizer.py'
+    viz = REPO_ROOT / 'services' / 'topology' / 'topology_visualizer.py'
     if viz.exists():
         try:
             print('Running topology_visualizer.py...')
@@ -321,7 +326,7 @@ def run_topology_generators(repo: Path):
         except Exception as e:
             print('Warning: topology_visualizer failed:', e)
 
-    live = repo / 'services' / 'topology' / 'live_topology_capture.py'
+    live = REPO_ROOT / 'services' / 'topology' / 'live_topology_capture.py'
     if live.exists():
         try:
             print('Running live_topology_capture.py --report...')

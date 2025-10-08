@@ -95,7 +95,7 @@ graceful_cleanup() {
     log "📈 Running analysis on partial data..."
     
     # Latency analysis
-    if python3 scripts/report_generators/latency_analysis.py "$reports_dir" 2>/dev/null; then
+    if python3 scripts/reports/report_generators/latency_analysis.py "$reports_dir" 2>/dev/null; then
         success "✅ Latency analysis completed"
     else
         warn "⚠️ Latency analysis failed (insufficient data?)"
@@ -116,7 +116,7 @@ graceful_cleanup() {
     fi
     
     # Intelligent analysis
-    if python3 scripts/intelligent_test_analysis.py "$test_dir" 2>/dev/null; then
+    if python3 scripts/reports/report_generators/intelligent_test_analysis.py "$test_dir" 2>/dev/null; then
         success "✅ Intelligent analysis completed"
     else
         warn "⚠️ Intelligent analysis failed"
@@ -239,7 +239,7 @@ else
     warn "⚠️ Bidirectional analysis failed; continuing with original ODTE CSV"
 fi
 
-python3 scripts/report_generators/latency_analysis.py "$reports_dir" || {
+python3 scripts/reports/report_generators/latency_analysis.py "$reports_dir" || {
     error "Latency analysis failed"
     exit 1
 }
@@ -257,7 +257,7 @@ make plots REPORTS_DIR="$reports_dir" || {
 }
 
 log "[5/5] Running intelligent analysis..."
-python3 scripts/intelligent_test_analysis.py "$latest_test_dir" || {
+python3 scripts/reports/report_generators/intelligent_test_analysis.py "$latest_test_dir" || {
     warn "⚠️ Intelligent analysis failed, continuing..."
 }
 
