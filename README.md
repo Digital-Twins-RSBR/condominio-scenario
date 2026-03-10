@@ -33,17 +33,20 @@ Observacao: em eMBB/Best-Effort, o `M2S_received_count` do summary pode ficar em
 
 | Cenario | Sent | Matched | Delivery | Mean | P50 | P95 | P99 | CV | AoT Mean | Twin Fidelity |
 |---------|-----:|--------:|---------:|-----:|----:|----:|----:|---:|---------:|--------------:|
-| Test 1 URLLC Otimizado | 1033 | 756 | 73.18% | 324.680 ms | 324 ms | 366 ms | 403 ms | 8.91% | N/D | N/D |
-| Test 2 eMBB Otimizado | 96 | 0 | 0.00% | 5436.667 ms | 5454 ms | 7289 ms | 7289 ms | 21.15% | N/D | N/D |
-| Test 3 Best-Effort Otimizado | 62 | 0 | 0.00% | 9200.143 ms | 8606 ms | 11876 ms | 11876 ms | 18.35% | N/D | N/D |
-| Test 4 URLLC RAW | 1019 | 745 | 73.11% | 329.173 ms | 325 ms | 374 ms | 445 ms | 8.97% | N/D | N/D |
-| Test 5 eMBB RAW | 98 | 0 | 0.00% | 4713.500 ms | 4798 ms | 6003 ms | 6003 ms | 18.87% | N/D | N/D |
-| Test 6 Best-Effort RAW | 62 | 0 | 0.00% | 8710.600 ms | 8746 ms | 10164 ms | 10164 ms | 12.36% | N/D | N/D |
-| Test 7 URLLC M2S Perf | 1504 | 1100 | 73.14% | 282.551 ms | 281 ms | 322 ms | 337 ms | 8.01% | N/D | N/D |
+| Test 1 URLLC Otimizado | 1033 | 756 | 73.18% | 324.680 ms | 324 ms | 366 ms | 403 ms | 8.91% | 324.68 ms | 73.18% |
+| Test 2 eMBB Otimizado | 96 | 6 | 6.25% | 5436.667 ms | 5454 ms | 7289 ms | 7289 ms | 21.15% | 5436.67 ms | 6.25% |
+| Test 3 Best-Effort Otimizado | 62 | 7 | 11.29% | 9200.143 ms | 8606 ms | 11876 ms | 11876 ms | 18.35% | 9200.14 ms | 11.29% |
+| Test 4 URLLC RAW | 1019 | 745 | 73.11% | 329.173 ms | 325 ms | 374 ms | 445 ms | 8.97% | 329.17 ms | 73.11% |
+| Test 5 eMBB RAW | 98 | 12 | 12.24% | 4713.500 ms | 4798 ms | 6003 ms | 6003 ms | 18.87% | 4713.50 ms | 12.24% |
+| Test 6 Best-Effort RAW | 62 | 5 | 8.06% | 8710.600 ms | 8746 ms | 10164 ms | 10164 ms | 12.36% | 8710.60 ms | 8.06% |
+| Test 7 URLLC M2S Perf | 1504 | 1100 | 73.14% | 282.551 ms | 281 ms | 322 ms | 337 ms | 8.01% | 282.55 ms | 73.14% |
 
 Notas:
-- `AoT` e `Twin Fidelity` ainda nao sao emitidos no `test_*_summary.txt` desta execucao, por isso aparecem como `N/D`.
-- Assim que o pipeline 6G metrics for acoplado ao summary, estes campos devem ser atualizados nesta tabela.
+- `Matched` = pares (correlation_id) entregues em ate 60s (entrega eventual, nao necessariamente dentro do SLA).
+- `Delivery` = % de comandos que receberam resposta eventual (mesmo apos timeout do TB).
+- `AoT Mean` = latencia media M2S = frescor do estado do Digital Twin.
+- `Twin Fidelity` = % de atualizacoes M2S que chegaram com sucesso = confiabilidade de sincronizacao.
+- eMBB/best-effort: baixo TF porque o TB descarta respostas ao atingir o timeout configurado (300ms/500ms); apenas 6-12 respondem antes do corte final do teste.
 
 ### Caminho S2M (Sensor -> Middleware)
 

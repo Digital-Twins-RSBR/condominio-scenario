@@ -45,62 +45,48 @@ def read_raw_export_metrics(device_csv='', latency_csv=''):
         except Exception:
             pass
 
-    # M2S latency and reliability from latency_measurement export
-    # strict pairing by (sensor, request_id)
-    # fallback pairing by sensor only (when request_id is missing/inconsistent)
-    strict = {}
-    sensor_only = {}
+    # M2S latency pairing by correlation_id (unique per command-response pair).
+    # sent rows: sensor=<uuid>, correlation_id=<uuid>, dt_id=<int>, source=middts
+    # received rows: sensor='middts' (column-shift), correlation_id=<uuid>, dt_id=<sensor_uuid>
+    m2s_sent_map = {}   # {corr_id: sent_ts_ms}
+    m2s_recv_map = {}   # {corr_id: recv_ts_ms}  (first occurrence wins)
     if latency_csv and os.path.exists(latency_csv):
         try:
             with open(latency_csv, newline='') as f:
-                r = csv.DictReader(f)
-                for row in r:
+                for row in csv.DictReader(f):
                     if row.get('direction') != 'M2S':
                         continue
-
                     field = row.get('_field')
                     if field not in ('sent_timestamp', 'received_timestamp'):
                         continue
-
-                    sensor = row.get('sensor') or ''
-                    req = _normalize_request_id(row.get('request_id'))
-
-                    try:
-                        value = int(float(row.get('_value')))
-                    except Exception:
+                    corr_id = row.get('correlation_id') or row.get('request_id') or ''
+                    if not corr_id:
                         continue
-
+                    corr_id = _normalize_request_id(corr_id)
+                    try:
+                        ts = int(float(row.get('_value', '0')))
+                    except (ValueError, TypeError):
+                        continue
                     if field == 'sent_timestamp':
                         m2s_sent += 1
+                        if corr_id not in m2s_sent_map:
+                            m2s_sent_map[corr_id] = ts
                     elif field == 'received_timestamp':
                         m2s_received += 1
-
-                    strict.setdefault((sensor, req), {})[field] = value
-                    sensor_only.setdefault(sensor, {})[field] = value
+                        if corr_id not in m2s_recv_map:
+                            m2s_recv_map[corr_id] = ts
         except Exception:
             pass
 
-    strict_lat = []
-    strict_ok = 0
-    for fields in strict.values():
-        if 'sent_timestamp' in fields and 'received_timestamp' in fields:
-            strict_ok += 1
-            dt = (fields['received_timestamp'] - fields['sent_timestamp']) / 1000.0
-            if 0 <= dt < 10000:
-                strict_lat.append(dt)
+    m2s_lat = []
+    for corr_id, sent_ts in m2s_sent_map.items():
+        if corr_id in m2s_recv_map:
+            dt_s = (m2s_recv_map[corr_id] - sent_ts) / 1000.0  # seconds
+            if 0 <= dt_s < 60:  # sanity: < 60s
+                m2s_lat.append(dt_s)
 
-    fallback_lat = []
-    fallback_ok = 0
-    for fields in sensor_only.values():
-        if 'sent_timestamp' in fields and 'received_timestamp' in fields:
-            fallback_ok += 1
-            dt = (fields['received_timestamp'] - fields['sent_timestamp']) / 1000.0
-            if 0 <= dt < 10000:
-                fallback_lat.append(dt)
-
-    lat_used = strict_lat if strict_lat else fallback_lat
-    pairs_used = strict_ok if strict_ok else fallback_ok
-    total_keys = len(strict) if strict_ok else len(sensor_only)
+    lat_used = m2s_lat
+    pairs_used = len(m2s_lat)
 
     # Calculate S2M latency from device_data (sent_timestamp + received_timestamp)
     # Use FIFO matching per sensor to handle multiple events per sensor correctly.
@@ -170,24 +156,44 @@ def read_raw_export_metrics(device_csv='', latency_csv=''):
 
     if lat_used:
         lat_used.sort()
-        out['mean_M2S_ms'] = round(sum(lat_used) / len(lat_used), 3)
-        out['median_M2S_ms'] = round(statistics.median(lat_used), 3)
+        n = len(lat_used)
+        mean_s = sum(lat_used) / n
+        out['mean_M2S_ms'] = round(mean_s * 1000.0, 3)
+        out['median_M2S_ms'] = round(statistics.median(lat_used) * 1000.0, 3)
+        out['P50_M2S_ms'] = round(lat_used[n // 2] * 1000.0, 3)
+        out['P95_M2S_ms'] = round(lat_used[int(n * 0.95)] * 1000.0, 3)
+        out['P99_M2S_ms'] = round(lat_used[int(n * 0.99)] * 1000.0, 3)
+        cv_m2s = statistics.stdev(lat_used) / mean_s if n > 1 else 0
+        out['CV_M2S_pct'] = round(cv_m2s * 100, 2)
+        # AoT Mean = M2S mean latency (freshness of digital twin state)
+        # Twin Fidelity = fraction of M2S commands that got a response
+        out['aot_mean_ms'] = out['mean_M2S_ms']
+        out['aot_p95_ms'] = out['P95_M2S_ms']
+        out['twin_fidelity_pct'] = round(pairs_used * 100.0 / m2s_sent, 2) if m2s_sent > 0 else 0.0
     else:
         out['mean_M2S_ms'] = 0.0
         out['median_M2S_ms'] = 0.0
+        out['P95_M2S_ms'] = 0.0
+        out['aot_mean_ms'] = 0.0
+        out['aot_p95_ms'] = 0.0
+        out['twin_fidelity_pct'] = 0.0
+
+    # S2M percentiles (lat array already in seconds)
+    if s2m_lat:
+        n = len(s2m_lat)
+        out['P50_S2M_ms'] = round(s2m_lat[n // 2] * 1000.0, 3)
+        out['P95_S2M_ms'] = round(s2m_lat[int(n * 0.95)] * 1000.0, 3)
+        out['P99_S2M_ms'] = round(s2m_lat[int(n * 0.99)] * 1000.0, 3)
+        mean_s2m = sum(s2m_lat) / n
+        cv_s2m = statistics.stdev(s2m_lat) / mean_s2m if n > 1 else 0
+        out['CV_S2M_pct'] = round(cv_s2m * 100, 2)
 
     out['M2S_total_count'] = m2s_received
-
-    # Additional reliability signals
     out['M2S_sent_count'] = m2s_sent
     out['M2S_received_count'] = m2s_received
     out['M2S_matched_pairs'] = pairs_used
-    out['R_m2s_event_percent'] = round((m2s_received * 100.0 / m2s_sent), 3) if m2s_sent > 0 else 0.0
-    out['R_m2s_pair_percent'] = round((pairs_used * 100.0 / total_keys), 3) if total_keys > 0 else 0.0
-
-    if lat_used:
-        p95_idx = min(len(lat_used) - 1, int(len(lat_used) * 0.95))
-        out['P95_ms'] = round(lat_used[p95_idx], 3)
+    out['R_m2s_event_percent'] = round(m2s_received * 100.0 / m2s_sent, 3) if m2s_sent > 0 else 0.0
+    out['R_m2s_pair_percent'] = round(pairs_used * 100.0 / m2s_sent, 3) if m2s_sent > 0 else 0.0
 
     return out
 
@@ -448,15 +454,27 @@ def main():
         else:
             out[k] = v
 
-    # Fallback to raw exported CSVs when generated reports are empty/insufficient
-    if (
-        out.get('S2M_total_count', 0) == 0
-        and out.get('M2S_total_count', 0) == 0
-        and args.device_csv
-        and args.latency_csv
-    ):
+    # Always run raw CSV analysis when CSVs are available.
+    # Per-sensor stats (from generated_reports) provide better mean/count if available.
+    # Raw CSV pairing provides matched_pairs, percentiles, AoT/TF which per-sensor stats lack.
+    if args.device_csv and args.latency_csv:
         raw = read_raw_export_metrics(args.device_csv, args.latency_csv)
-        out.update(raw)
+        if out.get('S2M_total_count', 0) == 0 and out.get('M2S_total_count', 0) == 0:
+            # No generated reports at all — full fallback
+            out.update(raw)
+        else:
+            # Supplement with pair-level insights only available from raw CSV
+            supplement_keys = [
+                'S2M_matched_pairs', 'S2M_sent_count', 'mean_S2M_ms', 'median_S2M_ms',
+                'P50_S2M_ms', 'P95_S2M_ms', 'P99_S2M_ms', 'CV_S2M_pct',
+                'M2S_matched_pairs', 'M2S_sent_count', 'M2S_received_count',
+                'R_m2s_pair_percent', 'mean_M2S_ms', 'median_M2S_ms',
+                'P50_M2S_ms', 'P95_M2S_ms', 'P99_M2S_ms', 'CV_M2S_pct',
+                'aot_mean_ms', 'aot_p95_ms', 'twin_fidelity_pct',
+            ]
+            for key in supplement_keys:
+                if key in raw:
+                    out[key] = raw[key]
 
     append_summary(args.summary, out)
 

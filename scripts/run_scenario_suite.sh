@@ -361,6 +361,17 @@ run_scenario() {
         } > "$merged_csv"
         
         success "Resultados copiados para Teste $num (usando análise correta do apply_slice.sh)"
+
+        # Compute derived post-test metrics: M2S matched pairs, AoT, Twin Fidelity, S2M FIFO pairing
+        log "8b. Computando métricas pós-teste (M2S matched, AoT, TwinFidelity, S2M FIFO)..."
+        local reports_dir="${latest_test_dir}/generated_reports"
+        python3 scripts/reports/report_generators/_compute_run_metrics.py \
+            --reports-dir "$reports_dir" \
+            --profile "$profile" \
+            --summary "$RESULTS_DIR/test_${num}_summary.txt" \
+            --device-csv "$RESULTS_DIR/test_${num}_device_data.csv" \
+            --latency-csv "$RESULTS_DIR/test_${num}_latency_measurement.csv" 2>/dev/null \
+            || log "[AVISO] compute metrics falhou para teste ${num} (nao critico)"
     else
         error "CSVs do teste ausentes ou vazios (device_data + latency_measurement)"
         scenario_failed=1
