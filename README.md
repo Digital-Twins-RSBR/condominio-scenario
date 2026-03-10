@@ -1,54 +1,28 @@
-# 🏢 Cenário Condomínio - URLLC com ODTE Real
+# Cenário Condomínio – URLLC com ODTE Bidirectional
 
-Este projeto implementa um sistema completo de medição de latência Ultra-Reliable Low-Latency Communication (URLLC) com One-Way Delay Time (ODTE) real para aplicações IoT em condomínios inteligentes.
+Testbed de avaliação de desempenho URLLC/eMBB/Best-Effort para aplicações IoT em condomínios inteligentes, com medição de latência ODTE (One-Way Delay Time) bidirecional (Sensor→Middleware e Middleware→Sensor).
 
-## 🏆 **BREAKTHROUGH RESULTS - 2025-10-03** 🏆
+## Marco Atual – Suíte Completa (2026-03-10)
 
-**🎯 MARCO HISTÓRICO:** Primeira vez atingindo meta URLLC <200ms com filtro inteligente!
+Execução de referência: 7 cenários, `--duration 600`. Dados em `outputs/tests_20260310_114533/`.
 
-### 📊 Resultados Record Alcançados:
-- **✅ S2M Latência:** 73.4ms (target: <200ms) - **99% melhoria** vs 7000ms anterior
-- **✅ Meta URLLC:** 100% das medições S2M dentro da meta (<200ms)
-- **✅ Filtro Inteligente:** 40.4% redução de carga (28/47 dispositivos)
-- **✅ Conectividade:** 100% simuladores ativos durante teste
-- **✅ Network Shaping:** Bug de 50ms eliminado
-- **✅ Score Geral:** 100/100 durante execução
+| Cenário | S2M eventos | M2S Sent | M2S Recv | Delivery | Média M2S | P95 M2S |
+|---------|------------:|---------:|---------:|---------:|----------:|--------:|
+| Test 1 URLLC Otimizado (150ms)     | 29 424 | 1 033 |   756 | 73.18% | 324.7 ms | 366 ms |
+| Test 2 eMBB Otimizado (300ms)      |  2 984 |    96 |     6 |  6.25% | 5436.7 ms | 7289 ms |
+| Test 3 Best-Effort Otimizado       |  1 575 |    62 |     7 | 11.29% | 9200.1 ms | 11876 ms |
+| Test 4 URLLC RAW (30 000ms)        | 29 542 | 1 019 |   745 | 73.11% | 329.2 ms | 374 ms |
+| Test 5 eMBB RAW (5 000ms)          |  3 312 |    98 |    12 | 12.24% | 4713.5 ms | 6003 ms |
+| Test 6 Best-Effort RAW             |  1 558 |    62 |     5 |  8.06% | 8710.6 ms | 10164 ms |
+| Test 7 URLLC M2S Perf (220ms)      | 30 473 | 1 504 | 1 100 | 73.14% | **282.6 ms** | **322 ms** |
 
-**📁 Teste Referência:** `test_20251003T154254Z_urllc`  
-**🔧 Documentação:** `docs/BREAKTHROUGH_RESULTS_2025-10-03.md`
+**Test 7 vs Test 1:** −42 ms na média (−13%), −44 ms no P95 (−12%), CV 8.01% vs 8.91%.
 
-### 🚀 Quick Start para Reproduzir Resultados:
+### Reproduzir este Marco
+
 ```bash
-# 1. Aplicar todas otimizações automaticamente
-./scripts/apply_urllc_optimizations.sh
-
-# 2. Executar teste otimizado
-make odte-full DURATION=300
-
-# 3. Monitorar em tempo real
-./scripts/monitor/monitor_realtime_connectivity.sh
+./scripts/run_scenario_suite.sh --duration 600 --m2s-perf
 ```
-
-## � OBJETIVOS ALCANÇADOS - OTIMIZAÇÃO COMPLETA (OUT/2025)
-
-- **✅ URLLC <200ms:** S2M 69.4ms, M2S 184.0ms (meta atingida!)
-- **✅ ODTE Bidirectional:** Medição real de latência em ambas as direções
-- **✅ Otimização Sistêmica:** CPU reduzido de 472% para 330% (-30%)
-- **✅ Infraestrutura Resiliente:** Hot-swap de configurações sem restart
-- **✅ Monitoramento Avançado:** Análise de gargalos em tempo real
-- **✅ Documentação Completa:** Perfis otimizados e procedimentos documentados
-
-## 🎯 CONFIGURAÇÃO ÓTIMA IDENTIFICADA
-
-**Perfil Vencedor:** `reduced_load` com 5 simuladores  
-**Descoberta Principal:** Número de simuladores é o gargalo crítico  
-**Resultado:** Ambas latências <200ms com CPU controlado
-
-### Resultados Finais Validados:
-- **S2M (Simulator→Middleware):** 69.4ms ✅ 
-- **M2S (Middleware→Simulator):** 184.0ms ✅
-- **CPU ThingsBoard:** 330% pico, 172% médio
-- **Simuladores ótimos:** 5 simultâneos
 
 ## 🏗️ Arquitetura do Sistema
 
@@ -182,6 +156,30 @@ docker logs mn.tb | grep "RPC\|performance"
 - **RPC Success Rate:** >99% de RPCs bem-sucedidos
 - **Data Flow:** Timestamps sendo capturados continuamente
 - **InfluxDB Health:** Dados sendo escritos sem erros
+
+## ✅ Virtualenv consolidado (recomendado)
+
+Para facilitar execução dos scripts, geradores de relatório e simuladores em um único ambiente, criamos um requirements consolidado e helper para criar um virtualenv chamado `.venv-reports`.
+
+Passos rápidos:
+
+```sh
+# Criar/atualizar o virtualenv consolidado
+./scripts/setup_venv.sh
+
+# Ativar
+. .venv-reports/bin/activate
+
+# Rodar o gerador de topologia (exemplo)
+./scripts/generate_topology_diagram.sh
+```
+
+Observação: instale o binário Graphviz se necessário:
+
+```sh
+sudo apt-get update && sudo apt-get install -y graphviz
+```
+
 
 ## 📖 Documentação Técnica
 

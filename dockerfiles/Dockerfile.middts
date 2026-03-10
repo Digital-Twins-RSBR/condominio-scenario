@@ -37,6 +37,9 @@ RUN ln -sf /middleware-dt /middleware_dt \
 
 ENV DJANGO_SETTINGS_MODULE=middleware_dt.settings
 
+# Network profile for adaptive RPC timeouts (can be overridden at runtime)
+ENV NETWORK_PROFILE=urllc
+
 EXPOSE 8000
 
 COPY middleware-dt/entrypoint.sh /entrypoint.sh

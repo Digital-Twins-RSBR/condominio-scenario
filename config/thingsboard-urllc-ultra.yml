@@ -1,0 +1,65 @@
+# ==============================================================================
+# PERFIL: URLLC ULTRA OPTIMIZED v1
+# ==============================================================================
+# Objetivo: AoT (Age of Twin) < 200ms, ODTE > 40%
+# Aplicação: Maximum throughput + low latency digital twin sync
+# Constraint: Recomendado até 35 sensores simultâneos
+# Data: 08/03/2026
+# ==============================================================================
+
+# === RPC CONFIGURATION (ULTRA AGRESSIVO) ===
+# Força o middleware a ser rápido; timeout curto = fail fast + retry rápido
+CLIENT_SIDE_RPC_TIMEOUT: 75
+
+# === HTTP OPTIMIZATION (ULTRA FAST) ===
+# Reduz overhead HTTP na path crítica
+HTTP_REQUEST_TIMEOUT_MS: 100
+HTTP_MAX_CONNECTIONS: 400
+HTTP_MAX_CONNECTIONS_PER_ROUTE: 100
+HTTP_CONNECTION_TIMEOUT_MS: 50
+HTTP_SOCKET_TIMEOUT_MS: 100
+
+# === BATCH PROCESSING OPTIMIZATION (MINIMAL DELAY) ===
+# Reduce batcher delay = mensagens processadas imediatamente
+SQL_TS_BATCH_SIZE: 2000
+SQL_TS_BATCH_MAX_DELAY_MS: 1
+SQL_TS_LATEST_BATCH_SIZE: 1000
+SQL_TS_LATEST_BATCH_MAX_DELAY_MS: 1
+SQL_TS_BATCH_THREADS: 8
+SQL_TS_LATEST_BATCH_THREADS: 8
+
+# === QUEUE OPTIMIZATION (AGRESSIVA) ===
+# Mais threads = menos fila de espera para cada sensor
+TB_QUEUE_CORE_POLL_INTERVAL_MS: 5
+TB_QUEUE_CORE_PARTITIONS: 16
+TB_QUEUE_CORE_WORKERS: 32
+TB_QUEUE_RULE_ENGINE_THREAD_POOL_SIZE: 64
+TB_QUEUE_TRANSPORT_THREAD_POOL_SIZE: 64
+TB_QUEUE_JS_THREAD_POOL_SIZE: 32
+
+# === JVM OPTIMIZATION (LATENCY TUNED) ===
+# MaxGCPauseMillis=5 força GC rápido (vs 15ms antes)
+# Heap 10g reduce frequencia de GC
+JAVA_OPTS: "-Xms8g -Xmx10g -XX:+UseG1GC -XX:MaxGCPauseMillis=5 -XX:G1HeapRegionSize=8m -XX:+UseStringDeduplication -XX:G1NewSizePercent=40 -XX:G1MaxNewSizePercent=60 -XX:+UnlockDiagnosticVMOptions -XX:G1SummarizeRSetStatsPeriod=86400 -XX:-ResizePLab -server"
+
+# === ACTOR SYSTEM (AGRESSIVO) ===
+# Actor dispatcher = critical path para sensor processing
+ACTORS_SYSTEM_THROUGHPUT: 10
+ACTORS_SYSTEM_DEVICE_DISPATCHER_POOL_SIZE: 32
+ACTORS_SYSTEM_RULE_DISPATCHER_POOL_SIZE: 16
+ACTORS_RULE_DB_CALLBACK_THREAD_POOL_SIZE: 32
+
+# === DATABASE CONNECTION POOL (AGRESSIVO) ===
+# Reduz wait time para adquirir connection
+SPRING_DATASOURCE_MAXIMUM_POOL_SIZE: 32
+SPRING_DATASOURCE_MINIMUM_IDLE: 16
+
+# === MQTT OPTIMIZATION ===
+# Netty workers = numero de threads para processar eventos de rede
+MQTT_TIMEOUT_MS: 5000
+NETTY_WORKER_GROUP_THREADS: 32
+
+# === PERFIL INFO ===
+PROFILE_NAME: "URLLC Ultra Optimized"
+PROFILE_DESCRIPTION: "Latency-focused: AoT < 200ms, ODTE > 40% - Até 35 sensores"
+HEARTBEAT_INTERVAL: 3

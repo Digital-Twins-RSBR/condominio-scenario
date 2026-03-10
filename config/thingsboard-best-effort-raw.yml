@@ -1,0 +1,52 @@
+# ==============================================================================
+# PERFIL: Best-Effort - RAW (SEM TIMEOUT ARTIFICIAL)
+# ==============================================================================
+# Configuração para medir tempo BRUTO sem restrição artificial de timeout
+# Rede: 50ms latência (10ms de delay + 2× RTT)
+# Tempo real esperado: ~400-600ms (RTT + processing)
+# ==============================================================================
+
+# === RPC CONFIGURATION (TIMEOUT MUITO ALTO) ===
+# 10000ms é MAIS que suficiente para capturar tempo real em Best-Effort
+CLIENT_SIDE_RPC_TIMEOUT: 10000
+
+# === HTTP OPTIMIZATION (CONSERVATIVE) ===
+HTTP_REQUEST_TIMEOUT_MS: 10500
+HTTP_MAX_CONNECTIONS: 150
+HTTP_MAX_CONNECTIONS_PER_ROUTE: 40
+HTTP_CONNECTION_TIMEOUT_MS: 3000
+HTTP_SOCKET_TIMEOUT_MS: 10000
+
+# === BATCH PROCESSING (CONSERVATIVE) ===
+SQL_TS_BATCH_SIZE: 1000
+SQL_TS_BATCH_MAX_DELAY_MS: 20
+SQL_TS_LATEST_BATCH_SIZE: 500
+SQL_TS_LATEST_BATCH_MAX_DELAY_MS: 10
+SQL_TS_BATCH_THREADS: 3
+SQL_TS_LATEST_BATCH_THREADS: 3
+
+# === QUEUE OPTIMIZATION (CONSERVATIVE) ===
+TB_QUEUE_CORE_POLL_INTERVAL_MS: 15
+TB_QUEUE_CORE_PARTITIONS: 6
+TB_QUEUE_CORE_WORKERS: 12
+TB_QUEUE_RULE_ENGINE_THREAD_POOL_SIZE: 20
+TB_QUEUE_TRANSPORT_THREAD_POOL_SIZE: 20
+TB_QUEUE_JS_THREAD_POOL_SIZE: 10
+
+# === JVM OPTIMIZATION (ULTRA CONSERVATIVE) ===
+# RAW mode only needs high timeout, not aggressive tuning
+# Reduced to 3GB to ensure fast container restart
+JAVA_OPTS: "-Xms2g -Xmx3g -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -XX:G1HeapRegionSize=16m -XX:+UseStringDeduplication -server"
+
+# === ACTOR SYSTEM (CONSERVATIVE) ===
+ACTORS_SYSTEM_THROUGHPUT: 3
+ACTORS_SYSTEM_DEVICE_DISPATCHER_POOL_SIZE: 2
+ACTORS_SYSTEM_RULE_DISPATCHER_POOL_SIZE: 4
+ACTORS_RULE_DB_CALLBACK_THREAD_POOL_SIZE: 12
+
+# === DATABASE CONNECTION POOL (CONSERVATIVE) ===
+SPRING_DATASOURCE_MAXIMUM_POOL_SIZE: 14
+
+# === MQTT OPTIMIZATION (RELAXADA) ===
+MQTT_TIMEOUT_MS: 12000
+NETTY_WORKER_GROUP_THREADS: 8

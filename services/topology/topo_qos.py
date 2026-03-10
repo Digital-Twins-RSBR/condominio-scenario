@@ -669,6 +669,32 @@ def run_topo(num_sims=5):
     for i in range(num_sims):
         sim_switches.append(net.addSwitch(f's{i+3}'))
 
+    # Select ThingsBoard config file based on profile.
+    # Supports regular, RAW and M2S performance mode.
+    use_raw = os.environ.get('USE_RAW_CONFIG', '').lower() in ('true', '1', 'yes')
+    use_m2s_perf = os.environ.get('USE_M2S_PERF', '').lower() in ('true', '1', 'yes')
+
+    config_suffix = ''
+    config_mode = 'optimized'
+    if use_m2s_perf and str(topo_profile).lower() == 'urllc':
+        config_suffix = '-m2s-perf'
+        config_mode = 'm2s-perf'
+    elif use_raw:
+        config_suffix = '-raw'
+        config_mode = 'raw'
+    
+    # Map profile to config file
+    tb_config_map = {
+        'urllc': f'thingsboard-urllc{config_suffix}.yml',
+        'eMBB': f'thingsboard-embb{config_suffix if config_suffix == "-raw" else ""}.yml',
+        'embb': f'thingsboard-embb{config_suffix if config_suffix == "-raw" else ""}.yml',
+        'best_effort': f'thingsboard-best-effort{config_suffix if config_suffix == "-raw" else ""}.yml',
+        'best-effort': f'thingsboard-best-effort{config_suffix if config_suffix == "-raw" else ""}.yml'
+    }
+    
+    tb_config_file = tb_config_map.get(topo_profile.lower(), f'thingsboard-urllc{config_suffix}.yml')
+    info(f"[tb][config] Using ThingsBoard config: {tb_config_file} (profile={topo_profile}, mode={config_mode}, raw={use_raw}, m2s_perf={use_m2s_perf})\n")
+
     # Hosts principais
     tb = safe_add_with_status('tb', 
         dimage='tb-node-custom:latest',  # Usar latest ao invés de urllc
@@ -679,19 +705,12 @@ def run_topo(num_sims=5):
             'TB_QUEUE_TYPE': 'in-memory',
             'INSTALL_TB': 'true',
             'LOAD_DEMO': 'true',
-            # Adicionar configurações JAVA_OPTS para URLLC
-            'JAVA_OPTS': '-Xmx12g -Xms8g -XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:+DisableExplicitGC -XX:+UseStringDeduplication -XX:G1HeapRegionSize=16m -XX:G1NewSizePercent=40 -XX:G1MaxNewSizePercent=50',
-            'TB_QUEUE_RULE_ENGINE_THREAD_POOL_SIZE': '32',
-            'TB_QUEUE_TRANSPORT_THREAD_POOL_SIZE': '32',
-            'TB_QUEUE_JS_THREAD_POOL_SIZE': '16',
-            'TB_QUEUE_TRANSPORT_POLL_INTERVAL': '1',
-            'TB_QUEUE_RULE_ENGINE_POLL_INTERVAL': '1',
         },
         volumes=[
             'tb_assets:/data',
             'tb_logs:/var/log/thingsboard',
             f"{host_logs.get('tb')}:/var/log/thingsboard/manual_start.log",
-            f"{repo_root}/config/thingsboard-urllc.yml:/usr/share/thingsboard/conf/thingsboard.yml",
+            f"{repo_root}/config/{tb_config_file}:/usr/share/thingsboard/conf/thingsboard.yml",
         ],
         ports=[8080, 1883],
         port_bindings={8080: 8080, 1883: 1883},
@@ -948,7 +967,11 @@ def run_topo(num_sims=5):
             'DJANGO_SETTINGS_MODULE': 'middleware_dt.settings',
             # ensure token is freshly read from repo .env at creation time
             'INFLUXDB_TOKEN': read_repo_env_value('INFLUXDB_TOKEN', INFLUXDB_TOKEN),
-            'DEFER_START': '1'
+            'DEFER_START': '1',
+            # Pass network profile for adaptive RPC timeouts
+            'NETWORK_PROFILE': topo_profile,
+            # Allow host to override latency measurement flag (defaults to False in .env)
+            'ENABLE_INFLUX_LATENCY_MEASUREMENTS': os.getenv('ENABLE_INFLUX_LATENCY_MEASUREMENTS', 'False')
         },
         volumes=[
             f'{env_path}:/middleware-dt/.env',

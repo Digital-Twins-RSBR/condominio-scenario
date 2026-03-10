@@ -206,8 +206,8 @@ help:
 	@echo "  apply-urllc-yaml    -> Aplica configurações URLLC via YAML (rebuild TB)"
 	@echo "  organize-reports    -> Organiza relatórios por timestamp"
 	@echo "  optimize-latency    -> Aplica otimizações para baixa latência (<200ms)"
-	@echo "  analyze             -> Análise de texto dos relatórios ODTE (REPORTS_DIR=results/generated_reports)"
-	@echo "  plots               -> Gera gráficos dos relatórios ODTE (REPORTS_DIR=results/generated_reports)"
+	@echo "  analyze             -> Análise de texto dos relatórios ODTE (REPORTS_DIR=outputs/results/generated_reports)"
+	@echo "  plots               -> Gera gráficos dos relatórios ODTE (REPORTS_DIR=outputs/results/generated_reports)"
 	@echo "  clean               -> Limpeza completa (rede/veth/containers)"
 	@echo "  clean-controllers   -> Para controladores OpenFlow na porta 6653"
 	@echo "  check               -> Health checks dos containers (use make check)"
@@ -254,10 +254,10 @@ stop-parser:
 topo:
 	@echo "[📡] Executando topologia com Containernet"
 	@echo "[🔍] Verificando controladores em execução na porta 6653..."
-	@if sudo netstat -tlnp 2>/dev/null | grep -q ":6653 "; then \
+	@if sudo -n netstat -tlnp 2>/dev/null | grep -q ":6653 "; then \
 		echo "[⚠️] Controlador detectado na porta 6653. Parando..."; \
-		sudo pkill -f "controller.*6653" || true; \
-		sudo fuser -k 6653/tcp || true; \
+		sudo -n pkill -f "controller.*6653" || true; \
+		sudo -n fuser -k 6653/tcp || true; \
 		sleep 2; \
 	else \
 		echo "[✅] Porta 6653 livre"; \
@@ -288,8 +288,13 @@ topo:
 		if [ -f $(CURDIR)/.env ]; then . $(CURDIR)/.env; fi; \
 		profile="${PROFILE:-urllc}"; \
 	fi; \
-	echo "[topo] PROFILE=$$profile"; \
-	sh scripts/run_topo.sh "$$profile"
+	if [ -n "$(DURATION)" ]; then \
+		duration="$(DURATION)"; \
+	else \
+		duration=""; \
+	fi; \
+	echo "[topo] PROFILE=$$profile DURATION=$$duration"; \
+	sh scripts/run_topo.sh "$$profile" "$$duration"
 
 topo-rpc-ultra:
 	@$(MAKE) topo PROFILE=urllc CONFIG_PROFILE=ultra_aggressive
@@ -399,18 +404,12 @@ stop-topo:
 # Generate comprehensive visualization plots from the latest generated reports
 # Usage: make plots [REPORTS_DIR=results/generated_reports]
 plots:
-	@echo "[docs] Gerando seção de artigo (article/sections/evaluation.tex) a partir dos relatórios mais recentes"
+	@echo "[docs] Gerando seção de artigo (results/article/sections/evaluation.tex) a partir dos relatórios mais recentes"
 	@python3 scripts/reports/render_article.py || (echo "[WARN] render failed; ensure requirements in local.txt are installed"; exit 1)
 
 	@reports_dir="$${REPORTS_DIR:-outputs/results/generated_reports}"; \
-	echo "[📊] Gerando gráficos em $$reports_dir..."; \
-	if [ ! -d "$$reports_dir" ]; then \
-		echo "❌ Diretório não encontrado: $$reports_dir"; \
-		exit 1; \
-	fi; \
-	python3 scripts/reports/report_generators/enhanced_visualize.py "$$reports_dir" >/dev/null 2>&1 && \
-	echo "✅ Gráficos gerados em $$reports_dir/plots/" || \
-	echo "❌ Erro na geração de gráficos"
+	if [ ! -x scripts/reports/run_plots_for_reports.sh ]; then chmod +x scripts/reports/run_plots_for_reports.sh; fi; \
+	scripts/reports/run_plots_for_reports.sh "$$reports_dir"
 
 .PHONY: analyze
 # Perform comprehensive text-based analysis of ODTE reports without visualization dependencies
@@ -422,7 +421,7 @@ analyze:
 		echo "❌ Diretório não encontrado: $$reports_dir"; \
 		exit 1; \
 	fi; \
-	python3 scripts/report_generators/quick_analysis.py "$$reports_dir" 2>/dev/null && \
+	python3 scripts/reports/report_generators/quick_analysis.py "$$reports_dir" 2>/dev/null && \
 	echo "✅ Análise concluída" || echo "❌ Erro na análise"
 
 .PHONY: odte-monitored
@@ -450,7 +449,10 @@ odte-full:
 	@echo "[🚀] Starting complete ODTE workflow with graceful shutdown..."; \
 	profile="$${PROFILE:-auto}"; duration="$${DURATION:-1800}"; \
 	chmod +x scripts/graceful_odte.sh; \
-	./scripts/graceful_odte.sh "$$profile" "$$duration"
+	./scripts/graceful_odte.sh "$$profile" "$$duration"; \
+	# After the ODTE run, invoke post-processing script to find latest test and generate reports
+	if [ ! -x scripts/reports/postprocess_latest_test.sh ]; then chmod +x scripts/reports/postprocess_latest_test.sh; fi; \
+	scripts/reports/postprocess_latest_test.sh
 
 # === SCRIPTS URLLC E OTIMIZAÇÃO ===
 .PHONY: check-urllc check-topology check-tc summary organize-reports apply-urllc

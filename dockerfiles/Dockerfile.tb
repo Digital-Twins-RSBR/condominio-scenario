@@ -61,4 +61,5 @@ COPY config/thingsboard-urllc.yml /usr/share/thingsboard/bin/thingsboard.yml
 # Executa como root para evitar problemas com install.sh
 USER root
 
-CMD ["/bin/bash"]
+# Use the base image's default entrypoint to start ThingsBoard
+# CMD ["/bin/bash"]
