@@ -27,6 +27,70 @@ Observacao: em eMBB/Best-Effort, o `M2S_received_count` do summary pode ficar em
 ./scripts/run_scenario_suite.sh --duration 600 --m2s-perf
 ```
 
+## Analise Completa do Marco Atual
+
+### Caminho M2S (Middleware -> Sensor)
+
+| Cenario | Sent | Matched | Delivery | Mean | P50 | P95 | P99 | CV | AoT Mean | Twin Fidelity |
+|---------|-----:|--------:|---------:|-----:|----:|----:|----:|---:|---------:|--------------:|
+| Test 1 URLLC Otimizado | 1033 | 756 | 73.18% | 324.680 ms | 324 ms | 366 ms | 403 ms | 8.91% | N/D | N/D |
+| Test 2 eMBB Otimizado | 96 | 0 | 0.00% | 5436.667 ms | 5454 ms | 7289 ms | 7289 ms | 21.15% | N/D | N/D |
+| Test 3 Best-Effort Otimizado | 62 | 0 | 0.00% | 9200.143 ms | 8606 ms | 11876 ms | 11876 ms | 18.35% | N/D | N/D |
+| Test 4 URLLC RAW | 1019 | 745 | 73.11% | 329.173 ms | 325 ms | 374 ms | 445 ms | 8.97% | N/D | N/D |
+| Test 5 eMBB RAW | 98 | 0 | 0.00% | 4713.500 ms | 4798 ms | 6003 ms | 6003 ms | 18.87% | N/D | N/D |
+| Test 6 Best-Effort RAW | 62 | 0 | 0.00% | 8710.600 ms | 8746 ms | 10164 ms | 10164 ms | 12.36% | N/D | N/D |
+| Test 7 URLLC M2S Perf | 1504 | 1100 | 73.14% | 282.551 ms | 281 ms | 322 ms | 337 ms | 8.01% | N/D | N/D |
+
+Notas:
+- `AoT` e `Twin Fidelity` ainda nao sao emitidos no `test_*_summary.txt` desta execucao, por isso aparecem como `N/D`.
+- Assim que o pipeline 6G metrics for acoplado ao summary, estes campos devem ser atualizados nesta tabela.
+
+### Caminho S2M (Sensor -> Middleware)
+
+| Cenario | S2M Recebidos | S2M Enviados | S2M Pares | Mean | P50 | P95 | P99 | CV |
+|---------|-------------:|-------------:|----------:|-----:|----:|----:|----:|---:|
+| Test 1 URLLC Otimizado | 29424 | 7240 | 7240 | 97.01 ms | 92.00 ms | 191.00 ms | 257.00 ms | 54.98% |
+| Test 2 eMBB Otimizado | 2984 | 815 | 681 | 2384.11 ms | 1754.00 ms | 7071.00 ms | 9647.00 ms | 87.85% |
+| Test 3 Best-Effort Otimizado | 1575 | 439 | 243 | 4933.95 ms | 4610.00 ms | 9598.00 ms | 9894.00 ms | 61.45% |
+| Test 4 URLLC RAW | 29542 | 7292 | 7292 | 108.12 ms | 101.00 ms | 213.00 ms | 286.00 ms | 54.60% |
+| Test 5 eMBB RAW | 3312 | 840 | 757 | 2916.86 ms | 2655.00 ms | 6975.00 ms | 9144.00 ms | 71.72% |
+| Test 6 Best-Effort RAW | 1558 | 427 | 309 | 5147.48 ms | 5064.00 ms | 9483.00 ms | 9803.00 ms | 53.75% |
+| Test 7 URLLC M2S Perf | 30473 | 7290 | 7290 | 100.66 ms | 95.00 ms | 198.00 ms | 251.00 ms | 53.62% |
+
+Nota:
+- Pares calculados por matching FIFO por sensor (corrige bug de column-shift no export InfluxDB).
+- URLLC: latencia S2M ~100ms, CV ~55% — comportamento esperado em Docker local.
+- eMBB/Best-Effort: alta latencia S2M (2-5s) reflete throttling de QoS aplicado aos perfis.
+
+### ODTE Geral, Formula e Metricas Agregadas
+
+Definicoes (por direcao):
+
+- `ODTE_M2S(%) = (M2S_matched_pairs / M2S_sent_count) * 100`
+- `ODTE_S2M(%) = (S2M_matched_pairs / S2M_sent_count) * 100`
+
+ODTE geral (quando ambas as direcoes existem):
+
+- `ODTE_geral(%) = ((M2S_matched_pairs + S2M_matched_pairs) / (M2S_sent_count + S2M_sent_count)) * 100`
+
+Estado no marco `outputs/tests_20260310_114533`:
+
+| Cenario | ODTE_M2S | ODTE_S2M | ODTE_geral |
+|---------|----------:|---------:|-----------:|
+| Test 1 URLLC Otimizado | 73.18% | 100.00% | 96.65% |
+| Test 2 eMBB Otimizado | 0.00% | 83.56% | 74.75% |
+| Test 3 Best-Effort Otimizado | 0.00% | 55.35% | 48.50% |
+| Test 4 URLLC RAW | 73.11% | 100.00% | 96.70% |
+| Test 5 eMBB RAW | 0.00% | 90.12% | 80.70% |
+| Test 6 Best-Effort RAW | 0.00% | 72.37% | 63.19% |
+| Test 7 URLLC M2S Perf | 73.14% | 100.00% | 95.41% |
+
+_ODTE_geral = (M2S_matched_pairs + S2M_matched_pairs) / (M2S_sent_count + S2M_sent_count)_
+
+Regra de atualizacao futura:
+
+- Sempre que houver novos resultados melhores, atualizar esta secao com os valores do novo `outputs/tests_<TIMESTAMP>` e manter este bloco como baseline historico.
+
 ## Arquitetura do Sistema
 
 ```

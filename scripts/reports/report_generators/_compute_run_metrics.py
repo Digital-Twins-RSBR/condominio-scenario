@@ -6,8 +6,190 @@ import argparse
 import csv
 import glob
 import os
+import re
 import statistics
 import sys
+
+
+def _normalize_request_id(raw):
+    if raw is None:
+        return ''
+    req = str(raw).strip()
+    req = req.strip('"')
+    while len(req) >= 2 and req.startswith('"') and req.endswith('"'):
+        req = req[1:-1].strip()
+    return req
+
+
+def _looks_like_uuid(raw):
+    if not raw:
+        return False
+    value = str(raw).strip().strip('"')
+    return bool(re.match(r'^[0-9a-fA-F-]{32,36}$', value))
+
+
+def read_raw_export_metrics(device_csv='', latency_csv=''):
+    out = {}
+    s2m_received = 0
+    m2s_sent = 0
+    m2s_received = 0
+
+    # S2M count from device_data export
+    if device_csv and os.path.exists(device_csv):
+        try:
+            with open(device_csv, newline='') as f:
+                r = csv.DictReader(f)
+                for row in r:
+                    if row.get('direction') == 'S2M' and row.get('_field') == 'received_timestamp':
+                        s2m_received += 1
+        except Exception:
+            pass
+
+    # M2S latency and reliability from latency_measurement export
+    # strict pairing by (sensor, request_id)
+    # fallback pairing by sensor only (when request_id is missing/inconsistent)
+    strict = {}
+    sensor_only = {}
+    if latency_csv and os.path.exists(latency_csv):
+        try:
+            with open(latency_csv, newline='') as f:
+                r = csv.DictReader(f)
+                for row in r:
+                    if row.get('direction') != 'M2S':
+                        continue
+
+                    field = row.get('_field')
+                    if field not in ('sent_timestamp', 'received_timestamp'):
+                        continue
+
+                    sensor = row.get('sensor') or ''
+                    req = _normalize_request_id(row.get('request_id'))
+
+                    try:
+                        value = int(float(row.get('_value')))
+                    except Exception:
+                        continue
+
+                    if field == 'sent_timestamp':
+                        m2s_sent += 1
+                    elif field == 'received_timestamp':
+                        m2s_received += 1
+
+                    strict.setdefault((sensor, req), {})[field] = value
+                    sensor_only.setdefault(sensor, {})[field] = value
+        except Exception:
+            pass
+
+    strict_lat = []
+    strict_ok = 0
+    for fields in strict.values():
+        if 'sent_timestamp' in fields and 'received_timestamp' in fields:
+            strict_ok += 1
+            dt = (fields['received_timestamp'] - fields['sent_timestamp']) / 1000.0
+            if 0 <= dt < 10000:
+                strict_lat.append(dt)
+
+    fallback_lat = []
+    fallback_ok = 0
+    for fields in sensor_only.values():
+        if 'sent_timestamp' in fields and 'received_timestamp' in fields:
+            fallback_ok += 1
+            dt = (fields['received_timestamp'] - fields['sent_timestamp']) / 1000.0
+            if 0 <= dt < 10000:
+                fallback_lat.append(dt)
+
+    lat_used = strict_lat if strict_lat else fallback_lat
+    pairs_used = strict_ok if strict_ok else fallback_ok
+    total_keys = len(strict) if strict_ok else len(sensor_only)
+
+    # Calculate S2M latency from device_data (sent_timestamp + received_timestamp)
+    # Use FIFO matching per sensor to handle multiple events per sensor correctly.
+    # S2M CSV rows have a column-shift: sensor UUID lands in request_id, sensor=middts.
+    s2m_lat = []
+    s2m_sent_count = 0
+    if device_csv and os.path.exists(device_csv):
+        try:
+            from collections import deque
+            sent_by_sensor = {}
+            recv_by_sensor = {}
+            with open(device_csv, newline='') as f:
+                for row in csv.DictReader(f):
+                    if row.get('direction') != 'S2M':
+                        continue
+                    sensor = row.get('sensor', '')
+                    req = row.get('request_id', '')
+                    source = row.get('source', '')
+
+                    # Recover real sensor UUID when columns are shifted
+                    if (not source) and str(sensor).strip() in ('middts', 'simulator') and _looks_like_uuid(req):
+                        sensor = str(req).strip().strip('"')
+
+                    field = row.get('_field', '')
+                    try:
+                        ts = int(float(row.get('_value', '0')))
+                    except (ValueError, TypeError):
+                        continue
+
+                    if field == 'sent_timestamp':
+                        sent_by_sensor.setdefault(sensor, []).append(ts)
+                        s2m_sent_count += 1
+                    elif field == 'received_timestamp':
+                        recv_by_sensor.setdefault(sensor, []).append(ts)
+
+            # FIFO pairing per sensor: match each sent with earliest recv >= sent
+            for sensor in sent_by_sensor:
+                if sensor not in recv_by_sensor:
+                    continue
+                sent_q = deque(sorted(sent_by_sensor[sensor]))
+                recv_q = deque(sorted(recv_by_sensor[sensor]))
+                while sent_q and recv_q:
+                    sv = sent_q[0]
+                    rv = recv_q[0]
+                    if rv >= sv:
+                        dt = (rv - sv) / 1000.0  # ms -> seconds
+                        if 0 <= dt < 10:  # sanity: < 10s
+                            s2m_lat.append(dt)
+                        sent_q.popleft()
+                        recv_q.popleft()
+                    else:
+                        recv_q.popleft()  # orphan recv before any sent
+        except Exception:
+            pass
+
+    # Keep legacy keys expected by summaries (but now calculated!)
+    if s2m_lat:
+        s2m_lat.sort()
+        out['mean_S2M_ms'] = round(sum(s2m_lat) / len(s2m_lat) * 1000.0, 3)  # Convert to ms
+        out['median_S2M_ms'] = round(statistics.median(s2m_lat) * 1000.0, 3)  # Convert to ms
+    else:
+        out['mean_S2M_ms'] = 0.0
+        out['median_S2M_ms'] = 0.0
+    out['S2M_total_count'] = s2m_received
+    out['S2M_sent_count'] = s2m_sent_count
+    out['S2M_matched_pairs'] = len(s2m_lat)
+
+    if lat_used:
+        lat_used.sort()
+        out['mean_M2S_ms'] = round(sum(lat_used) / len(lat_used), 3)
+        out['median_M2S_ms'] = round(statistics.median(lat_used), 3)
+    else:
+        out['mean_M2S_ms'] = 0.0
+        out['median_M2S_ms'] = 0.0
+
+    out['M2S_total_count'] = m2s_received
+
+    # Additional reliability signals
+    out['M2S_sent_count'] = m2s_sent
+    out['M2S_received_count'] = m2s_received
+    out['M2S_matched_pairs'] = pairs_used
+    out['R_m2s_event_percent'] = round((m2s_received * 100.0 / m2s_sent), 3) if m2s_sent > 0 else 0.0
+    out['R_m2s_pair_percent'] = round((pairs_used * 100.0 / total_keys), 3) if total_keys > 0 else 0.0
+
+    if lat_used:
+        p95_idx = min(len(lat_used) - 1, int(len(lat_used) * 0.95))
+        out['P95_ms'] = round(lat_used[p95_idx], 3)
+
+    return out
 
 
 def read_per_sensor_stats(path_pattern):
@@ -220,6 +402,8 @@ def main():
     p.add_argument('--profile', required=True)
     p.add_argument('--summary', required=True)
     p.add_argument('--odte', required=False, default='')
+    p.add_argument('--device-csv', required=False, default='')
+    p.add_argument('--latency-csv', required=False, default='')
     p.add_argument('--min-count', required=False, default=5, type=int, help='Minimum samples per sensor to include in median-of-medians')
     args = p.parse_args()
     out = {}
@@ -263,6 +447,17 @@ def main():
             out[k] = round(v, 6) if 'mean' in k or 'median' in k else v
         else:
             out[k] = v
+
+    # Fallback to raw exported CSVs when generated reports are empty/insufficient
+    if (
+        out.get('S2M_total_count', 0) == 0
+        and out.get('M2S_total_count', 0) == 0
+        and args.device_csv
+        and args.latency_csv
+    ):
+        raw = read_raw_export_metrics(args.device_csv, args.latency_csv)
+        out.update(raw)
+
     append_summary(args.summary, out)
 
 
