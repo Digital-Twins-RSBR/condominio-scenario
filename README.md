@@ -5,21 +5,21 @@ Testbed de avaliacao de desempenho URLLC/eMBB/Best-Effort para aplicacoes IoT em
 ## Marco Atual - Suite Completa (2026-03-10)
 
 Execucao de referencia: 7 cenarios, `--duration 600`.
-Dados: `outputs/tests_20260310_114533/`.
+Dados: `outputs/tests_20260310_185810/`.
 
 | Cenario | S2M eventos | M2S Sent | M2S Recv | Delivery | Media M2S | P95 M2S |
 |---------|------------:|---------:|---------:|---------:|----------:|--------:|
-| Test 1 URLLC Otimizado (150ms)     | 29 424 | 1 033 |   756 | 73.18% | 324.7 ms | 366 ms |
-| Test 2 eMBB Otimizado (300ms)      |  2 984 |    96 |     0 |  0.00% | 5436.7 ms | 7289 ms |
-| Test 3 Best-Effort Otimizado       |  1 575 |    62 |     0 |  0.00% | 9200.1 ms | 11876 ms |
-| Test 4 URLLC RAW (30 000ms)        | 29 542 | 1 019 |   745 | 73.11% | 329.2 ms | 374 ms |
-| Test 5 eMBB RAW (5 000ms)          |  3 312 |    98 |     0 |  0.00% | 4713.5 ms | 6003 ms |
-| Test 6 Best-Effort RAW             |  1 558 |    62 |     0 |  0.00% | 8710.6 ms | 10164 ms |
-| Test 7 URLLC M2S Perf (220ms)      | 30 473 | 1 504 | 1 100 | 73.14% | 282.6 ms | 322 ms |
+| Test 1 URLLC Otimizado (150ms)     | 29 577 | 1 063 |   778 | 73.19% | 309.6 ms | 349 ms |
+| Test 2 eMBB Otimizado (300ms)      |  3 266 |    97 |     7 |  7.22% | 5173.3 ms | 6112 ms |
+| Test 3 Best-Effort Otimizado (500ms) |  1 580 |    61 |     7 | 11.48% | 8713.6 ms | 10896 ms |
+| Test 4 URLLC RAW (30 000ms)        | 29 594 | 1 064 |   779 | 73.21% | 307.3 ms | 354 ms |
+| Test 5 eMBB RAW (5 000ms)          |  3 362 |    97 |    15 | 15.46% | 5157.4 ms | 6374 ms |
+| Test 6 Best-Effort RAW (10 000ms)  |  1 585 |    62 |     5 |  8.06% | 8694.4 ms | 10976 ms |
+| Test 7 URLLC M2S Perf (220ms)      | 30 532 | 1 525 | 1 115 | 73.11% | 276.5 ms | 313 ms |
 
-**Test 7 vs Test 1:** -42 ms na media (-13%), -44 ms no P95 (-12%), CV 8.01% vs 8.91%.
+**Test 7 vs Test 1:** -33 ms na media (-10.7%), -36 ms no P95 (-10.3%), CV 8.03% vs 8.89%.
 
-Observacao: em eMBB/Best-Effort, o `M2S_received_count` do summary pode ficar em `0` por regra de correlacao estrita, mesmo com respostas tardias no CSV bruto.
+Observacao: os valores de `M2S Recv` e `Delivery` acima sao calculados pelo pos-processamento em `_compute_run_metrics.py`, usando pareamento por `correlation_id` no CSV bruto exportado.
 
 ### Reproduzir este marco
 
@@ -33,32 +33,32 @@ Observacao: em eMBB/Best-Effort, o `M2S_received_count` do summary pode ficar em
 
 | Cenario | Sent | Matched | Delivery | Mean | P50 | P95 | P99 | CV | AoT Mean | Twin Fidelity |
 |---------|-----:|--------:|---------:|-----:|----:|----:|----:|---:|---------:|--------------:|
-| Test 1 URLLC Otimizado | 1033 | 756 | 73.18% | 324.680 ms | 324 ms | 366 ms | 403 ms | 8.91% | 324.68 ms | 73.18% |
-| Test 2 eMBB Otimizado | 96 | 6 | 6.25% | 5436.667 ms | 5454 ms | 7289 ms | 7289 ms | 21.15% | 5436.67 ms | 6.25% |
-| Test 3 Best-Effort Otimizado | 62 | 7 | 11.29% | 9200.143 ms | 8606 ms | 11876 ms | 11876 ms | 18.35% | 9200.14 ms | 11.29% |
-| Test 4 URLLC RAW | 1019 | 745 | 73.11% | 329.173 ms | 325 ms | 374 ms | 445 ms | 8.97% | 329.17 ms | 73.11% |
-| Test 5 eMBB RAW | 98 | 12 | 12.24% | 4713.500 ms | 4798 ms | 6003 ms | 6003 ms | 18.87% | 4713.50 ms | 12.24% |
-| Test 6 Best-Effort RAW | 62 | 5 | 8.06% | 8710.600 ms | 8746 ms | 10164 ms | 10164 ms | 12.36% | 8710.60 ms | 8.06% |
-| Test 7 URLLC M2S Perf | 1504 | 1100 | 73.14% | 282.551 ms | 281 ms | 322 ms | 337 ms | 8.01% | 282.55 ms | 73.14% |
+| Test 1 URLLC Otimizado | 1063 | 778 | 73.19% | 309.639 ms | 307 ms | 349 ms | 390 ms | 8.89% | 309.64 ms | 73.19% |
+| Test 2 eMBB Otimizado | 97 | 7 | 7.22% | 5173.286 ms | 4989 ms | 6112 ms | 6112 ms | 13.41% | 5173.29 ms | 7.22% |
+| Test 3 Best-Effort Otimizado | 61 | 7 | 11.48% | 8713.571 ms | 8552 ms | 10896 ms | 10896 ms | 15.04% | 8713.57 ms | 11.48% |
+| Test 4 URLLC RAW | 1064 | 779 | 73.21% | 307.268 ms | 305 ms | 354 ms | 389 ms | 8.59% | 307.27 ms | 73.21% |
+| Test 5 eMBB RAW | 97 | 15 | 15.46% | 5157.400 ms | 4981 ms | 6374 ms | 6374 ms | 16.25% | 5157.40 ms | 15.46% |
+| Test 6 Best-Effort RAW | 62 | 5 | 8.06% | 8694.400 ms | 8161 ms | 10976 ms | 10976 ms | 15.13% | 8694.40 ms | 8.06% |
+| Test 7 URLLC M2S Perf | 1525 | 1115 | 73.11% | 276.469 ms | 275 ms | 313 ms | 336 ms | 8.03% | 276.47 ms | 73.11% |
 
 Notas:
 - `Matched` = pares (correlation_id) entregues em ate 60s (entrega eventual, nao necessariamente dentro do SLA).
 - `Delivery` = % de comandos que receberam resposta eventual (mesmo apos timeout do TB).
 - `AoT Mean` = latencia media M2S = frescor do estado do Digital Twin.
 - `Twin Fidelity` = % de atualizacoes M2S que chegaram com sucesso = confiabilidade de sincronizacao.
-- eMBB/best-effort: baixo TF porque o TB descarta respostas ao atingir o timeout configurado (300ms/500ms); apenas 6-12 respondem antes do corte final do teste.
+- eMBB/best-effort: TF segue baixo por timeout no caminho RPC (300ms/500ms), mas o novo baseline ja mostra melhoria em eMBB (7.22% no otimizado e 15.46% no RAW).
 
 ### Caminho S2M (Sensor -> Middleware)
 
 | Cenario | S2M Recebidos | S2M Enviados | S2M Pares | Mean | P50 | P95 | P99 | CV |
 |---------|-------------:|-------------:|----------:|-----:|----:|----:|----:|---:|
-| Test 1 URLLC Otimizado | 29424 | 7240 | 7240 | 97.01 ms | 92.00 ms | 191.00 ms | 257.00 ms | 54.98% |
-| Test 2 eMBB Otimizado | 2984 | 815 | 681 | 2384.11 ms | 1754.00 ms | 7071.00 ms | 9647.00 ms | 87.85% |
-| Test 3 Best-Effort Otimizado | 1575 | 439 | 243 | 4933.95 ms | 4610.00 ms | 9598.00 ms | 9894.00 ms | 61.45% |
-| Test 4 URLLC RAW | 29542 | 7292 | 7292 | 108.12 ms | 101.00 ms | 213.00 ms | 286.00 ms | 54.60% |
-| Test 5 eMBB RAW | 3312 | 840 | 757 | 2916.86 ms | 2655.00 ms | 6975.00 ms | 9144.00 ms | 71.72% |
-| Test 6 Best-Effort RAW | 1558 | 427 | 309 | 5147.48 ms | 5064.00 ms | 9483.00 ms | 9803.00 ms | 53.75% |
-| Test 7 URLLC M2S Perf | 30473 | 7290 | 7290 | 100.66 ms | 95.00 ms | 198.00 ms | 251.00 ms | 53.62% |
+| Test 1 URLLC Otimizado | 29577 | 7295 | 7295 | 98.46 ms | 92.00 ms | 203.00 ms | 270.00 ms | 58.47% |
+| Test 2 eMBB Otimizado | 3266 | 848 | 746 | 2465.54 ms | 2149.00 ms | 6059.00 ms | 8035.00 ms | 70.78% |
+| Test 3 Best-Effort Otimizado | 1580 | 430 | 266 | 4914.91 ms | 4531.00 ms | 9278.00 ms | 9885.00 ms | 57.42% |
+| Test 4 URLLC RAW | 29594 | 7282 | 7282 | 103.58 ms | 98.00 ms | 210.00 ms | 284.00 ms | 56.74% |
+| Test 5 eMBB RAW | 3362 | 884 | 759 | 3138.97 ms | 2793.00 ms | 7145.00 ms | 9377.00 ms | 68.84% |
+| Test 6 Best-Effort RAW | 1585 | 442 | 272 | 4790.90 ms | 4662.00 ms | 9586.00 ms | 9962.00 ms | 63.50% |
+| Test 7 URLLC M2S Perf | 30532 | 7305 | 7305 | 103.30 ms | 98.00 ms | 207.00 ms | 260.00 ms | 54.92% |
 
 Nota:
 - Pares calculados por matching FIFO por sensor (corrige bug de column-shift no export InfluxDB).
@@ -76,17 +76,17 @@ ODTE geral (quando ambas as direcoes existem):
 
 - `ODTE_geral(%) = ((M2S_matched_pairs + S2M_matched_pairs) / (M2S_sent_count + S2M_sent_count)) * 100`
 
-Estado no marco `outputs/tests_20260310_114533`:
+Estado no marco `outputs/tests_20260310_185810`:
 
 | Cenario | ODTE_M2S | ODTE_S2M | ODTE_geral |
 |---------|----------:|---------:|-----------:|
-| Test 1 URLLC Otimizado | 73.18% | 100.00% | 96.65% |
-| Test 2 eMBB Otimizado | 0.00% | 83.56% | 74.75% |
-| Test 3 Best-Effort Otimizado | 0.00% | 55.35% | 48.50% |
-| Test 4 URLLC RAW | 73.11% | 100.00% | 96.70% |
-| Test 5 eMBB RAW | 0.00% | 90.12% | 80.70% |
-| Test 6 Best-Effort RAW | 0.00% | 72.37% | 63.19% |
-| Test 7 URLLC M2S Perf | 73.14% | 100.00% | 95.41% |
+| Test 1 URLLC Otimizado | 73.19% | 100.00% | 96.59% |
+| Test 2 eMBB Otimizado | 7.22% | 87.97% | 79.68% |
+| Test 3 Best-Effort Otimizado | 11.48% | 61.86% | 55.60% |
+| Test 4 URLLC RAW | 73.21% | 100.00% | 96.59% |
+| Test 5 eMBB RAW | 15.46% | 85.86% | 78.90% |
+| Test 6 Best-Effort RAW | 8.06% | 61.54% | 54.96% |
+| Test 7 URLLC M2S Perf | 73.11% | 100.00% | 95.36% |
 
 _ODTE_geral = (M2S_matched_pairs + S2M_matched_pairs) / (M2S_sent_count + S2M_sent_count)_
 
@@ -174,10 +174,10 @@ Scripts relacionados:
 
 ## Resultados Principais
 
-- **URLLC Otimizado (Test 1):** M2S media 324.7 ms, P95 366 ms, delivery 73.18%
-- **URLLC RAW (Test 4):** M2S media 329.2 ms, P95 374 ms, delivery 73.11%
-- **URLLC M2S Perf (Test 7):** M2S media 282.6 ms, P95 322 ms, delivery 73.14%
-- **Ganho Test 7 vs Test 1:** -13% na media e -12% no P95
+- **URLLC Otimizado (Test 1):** M2S media 309.6 ms, P95 349 ms, delivery 73.19%
+- **URLLC RAW (Test 4):** M2S media 307.3 ms, P95 354 ms, delivery 73.21%
+- **URLLC M2S Perf (Test 7):** M2S media 276.5 ms, P95 313 ms, delivery 73.11%
+- **Ganho Test 7 vs Test 1:** -10.7% na media e -10.3% no P95
 
 ## Ambiente Python (um venv recomendado)
 
