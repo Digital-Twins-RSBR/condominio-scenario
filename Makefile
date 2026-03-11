@@ -137,6 +137,9 @@ truncate-logs:
 
 build-images:
 	@echo "[🐳] Construindo imagens Docker personalizadas"
+	@echo "[🐳] Limpando imagens orfas e build cache obsoletos antes do build"
+	@docker image prune -f >/dev/null 2>&1 || true
+	@docker builder prune -f >/dev/null 2>&1 || true
 	docker build -t $(MIDDTS_CUSTOM_IMAGE) -f $(DOCKER_PATH)/Dockerfile.middts services/
 	docker build -t $(IOT_SIM_IMAGE) -f $(DOCKER_PATH)/Dockerfile.iot_simulator services/
 	docker build -t $(TB_IMAGE) -f $(DOCKER_PATH)/Dockerfile.tb services/
@@ -144,10 +147,16 @@ build-images:
 	docker build -t $(NEO4J_IMAGE) -f $(DOCKER_PATH)/Dockerfile.neo4j services/
 	docker build -t $(PARSER_IMAGE) -f $(DOCKER_PATH)/Dockerfile.parser services/
 	docker build -t $(INFLUX_IMAGE) -f $(DOCKER_PATH)/Dockerfile.influx services/
+	@echo "[🐳] Limpando camadas orfas e build cache apos o build"
+	@docker image prune -f >/dev/null 2>&1 || true
+	@docker builder prune -f >/dev/null 2>&1 || true
 	
 
 rebuild-images:
 	@echo "[🐳] Rebuilding ALL images from scratch (pulling base images, no cache)"
+	@echo "[🐳] Limpando imagens orfas e build cache obsoletos antes do rebuild"
+	@docker image prune -f >/dev/null 2>&1 || true
+	@docker builder prune -f >/dev/null 2>&1 || true
 	# Use --pull to get latest base layers and --no-cache to force full rebuild
 	docker build --pull --no-cache -t $(MIDDTS_CUSTOM_IMAGE) -f $(DOCKER_PATH)/Dockerfile.middts services/
 	docker build --pull --no-cache -t $(IOT_SIM_IMAGE) -f $(DOCKER_PATH)/Dockerfile.iot_simulator services/
@@ -156,6 +165,9 @@ rebuild-images:
 	docker build --pull --no-cache -t $(NEO4J_IMAGE) -f $(DOCKER_PATH)/Dockerfile.neo4j services/
 	docker build --pull --no-cache -t $(PARSER_IMAGE) -f $(DOCKER_PATH)/Dockerfile.parser services/
 	docker build --pull --no-cache -t $(INFLUX_IMAGE) -f $(DOCKER_PATH)/Dockerfile.influx services/
+	@echo "[🐳] Limpando camadas orfas e build cache apos o rebuild"
+	@docker image prune -f >/dev/null 2>&1 || true
+	@docker builder prune -f >/dev/null 2>&1 || true
 	@echo "[🐳] Rebuild completo finalizado. Certifique-se de recriar os containers para usar as novas imagens."
 
 # === USABILITY ALIASES E WORKFLOWS ===

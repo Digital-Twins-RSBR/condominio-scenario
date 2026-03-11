@@ -346,8 +346,11 @@ def run_topo(num_sims=5):
             'DOCKER_INFLUXDB_INIT_ADMIN_TOKEN': INFLUXDB_TOKEN
         },
         volumes=[
-            # Persistent data dir used by InfluxDB v2
-            'influx_data:/root/.influxdbv2',
+            # Mount the exact official-image VOLUME targets to avoid Docker
+            # creating a fresh anonymous volume on every run.
+            'influxdb2_data:/var/lib/influxdb2',
+            'influxdb2_config:/etc/influxdb2',
+            'influx_cli_config:/root/.influxdbv2',
             'influx_logs:/var/log/influxdb',
             f"{host_logs.get('influxdb')}:/var/log/influxdb_start.log",
         ],
@@ -368,8 +371,10 @@ def run_topo(num_sims=5):
             'NEO4J_AUTH': os.environ.get('NEO4J_AUTH', 'neo4j/neo4j_pass'),
         },
         volumes=[
-            # Persistent data dir for Neo4j
-            'neo4j_data:/var/lib/neo4j',
+            # Mount the exact official-image VOLUME targets to avoid Docker
+            # creating a fresh anonymous volume on every run.
+            'neo4j_data:/data',
+            'neo4j_runtime_logs:/logs',
             'neo4j_logs:/var/log/neo4j',
             f"{host_logs.get('neo4j')}:/var/log/neo4j_start.log",
         ],

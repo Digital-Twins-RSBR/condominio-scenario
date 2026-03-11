@@ -36,6 +36,7 @@ WITH_LINK_EVENTS=0
 USE_RAW_CONFIG=0  # Use raw configs (high timeout) to measure real latencies
 TESTS_FILTER=""  # Empty = run all tests; "1,3,5" = run only tests 1,3,5; "2,4" with skip = run 1,3,5
 ENABLE_M2S_PERF_7=0  # Optional scenario 7 with M2S-focused middleware tuning
+BUILD_IMAGES=0  # Rebuild Docker images before running the suite
 
 # Args:
 #   ./scripts/run_scenario_suite.sh 300
@@ -44,6 +45,7 @@ ENABLE_M2S_PERF_7=0  # Optional scenario 7 with M2S-focused middleware tuning
 #   ./scripts/run_scenario_suite.sh --tests 1,3,5 --duration 300
 #   ./scripts/run_scenario_suite.sh --skip 2,4 --duration 300
 #   ./scripts/run_scenario_suite.sh --raw --duration 300  # Raw configs without timeout artificial
+#   ./scripts/run_scenario_suite.sh --duration 300 --m2s-perf --build-images
 while [ $# -gt 0 ]; do
     case "$1" in
         --duration)
@@ -72,6 +74,10 @@ while [ $# -gt 0 ]; do
             # Run suite + optional scenario 7 (URLLC M2S performance mode)
             TESTS_FILTER="1,2,3,4,5,6,7"
             ENABLE_M2S_PERF_7=1
+            shift
+            ;;
+        --build-images)
+            BUILD_IMAGES=1
             shift
             ;;
         --test)
@@ -128,7 +134,7 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         --help|-h)
-            echo "Uso: $0 [--duration SEGUNDOS] [--raw] [--test N] [--tests N,M,P] [--skip N,M] [--full] [--m2s-perf] [--with-link-events]"
+            echo "Uso: $0 [--duration SEGUNDOS] [--raw] [--test N] [--tests N,M,P] [--skip N,M] [--full] [--m2s-perf] [--with-link-events] [--build-images]"
             echo ""
             echo "Opções:"
             echo "  --duration N        : Duração de cada teste em segundos [padrão: 180]"
@@ -139,6 +145,7 @@ while [ $# -gt 0 ]; do
             echo "  --full              : Rodar suite padrão (testes 1-6: 3 otimizados + 3 raw)"
             echo "  --m2s-perf          : Rodar suite + Teste 7 URLLC M2S Performance (1-7)"
             echo "  --with-link-events  : Habilita link scheduler (desabilitado por padrão)"
+            echo "  --build-images      : Executa 'make build-images' uma vez antes da suite"
             echo ""
             echo "Cenários:"
             echo "  Test 1: URLLC Otimizado       [150ms timeout]"
@@ -154,12 +161,13 @@ while [ $# -gt 0 ]; do
             echo "  $0 --duration 150 --full              # Suite padrão: 6×150s = 15 minutos"
             echo "  $0 --duration 150 --m2s-perf          # Suite + cenário 7 M2S"
             echo "  $0 --duration 150 --test 7            # Apenas cenário 7"
+            echo "  $0 --duration 600 --m2s-perf --build-images"
 
             exit 0
             ;;
         --*)
             error "Flag invalida: '$1'"
-            echo "Uso: $0 [--duration SEGUNDOS] [--raw] [--test N] [--tests N,M,P] [--skip N,M] [--with-link-events]"
+            echo "Uso: $0 [--duration SEGUNDOS] [--raw] [--test N] [--tests N,M,P] [--skip N,M] [--with-link-events] [--build-images]"
             exit 2
             ;;
         *)
@@ -212,8 +220,21 @@ if [ "$WITH_LINK_EVENTS" -eq 1 ]; then
 else
     log "Link Scheduler: DESABILITADO"
 fi
+if [ "$BUILD_IMAGES" -eq 1 ]; then
+    log "Imagens: REBUILD antes da suite"
+else
+    log "Imagens: reutilizando imagens locais atuais"
+fi
 log ""
 log ""
+
+if [ "$BUILD_IMAGES" -eq 1 ]; then
+    log "0. Reconstruindo imagens Docker..."
+    make build-images || {
+        error "Falha no build das imagens Docker"
+        exit 1
+    }
+fi
 
 run_scenario() {
     local num="$1" profile="$2" tb_flag="$3" desc="$4"
