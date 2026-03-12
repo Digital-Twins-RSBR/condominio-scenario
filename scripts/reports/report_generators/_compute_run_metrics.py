@@ -54,12 +54,32 @@ def read_raw_export_metrics(device_csv='', latency_csv=''):
         try:
             with open(latency_csv, newline='') as f:
                 for row in csv.DictReader(f):
-                    if row.get('direction') != 'M2S':
+                    direction = row.get('direction', '')
+                    corr_id = row.get('correlation_id') or row.get('request_id') or ''
+                    source = row.get('source', '')
+                    sensor = row.get('sensor', '')
+                    dt_id = row.get('dt_id', '')
+
+                    # Recover malformed/shifted M2S rows from latency_measurement export.
+                    # Some rows arrive with: correlation_id='M2S', direction='"<request_id>"',
+                    # dt_id='<real correlation UUID>', sensor='simulator', source=''.
+                    if direction != 'M2S':
+                        shifted_m2s = (
+                            (not source)
+                            and str(sensor).strip() in ('middts', 'simulator')
+                            and str(corr_id).strip().strip('"') == 'M2S'
+                            and _looks_like_uuid(dt_id)
+                        )
+                        if shifted_m2s:
+                            direction = 'M2S'
+                            corr_id = dt_id
+
+                    if direction != 'M2S':
                         continue
+
                     field = row.get('_field')
                     if field not in ('sent_timestamp', 'received_timestamp'):
                         continue
-                    corr_id = row.get('correlation_id') or row.get('request_id') or ''
                     if not corr_id:
                         continue
                     corr_id = _normalize_request_id(corr_id)
@@ -72,9 +92,9 @@ def read_raw_export_metrics(device_csv='', latency_csv=''):
                         if corr_id not in m2s_sent_map:
                             m2s_sent_map[corr_id] = ts
                     elif field == 'received_timestamp':
-                        m2s_received += 1
                         if corr_id not in m2s_recv_map:
                             m2s_recv_map[corr_id] = ts
+                            m2s_received += 1
         except Exception:
             pass
 

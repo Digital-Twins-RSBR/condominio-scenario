@@ -871,6 +871,17 @@ fi
 start_simulators
 start_middts_update "$MID_CNT"
 
+# Optional warmup window so simulators can finish MQTT auth/subscription before
+# we start counting the official workload time window.
+WORKLOAD_WARMUP_SECONDS="${WORKLOAD_WARMUP_SECONDS:-12}"
+case "$WORKLOAD_WARMUP_SECONDS" in
+  ''|*[!0-9]*) WORKLOAD_WARMUP_SECONDS=12 ;;
+esac
+if [ "$WORKLOAD_WARMUP_SECONDS" -gt 0 ]; then
+  log "Warmup: aguardando ${WORKLOAD_WARMUP_SECONDS}s para estabilizar MQTT/RPC antes do workload"
+  sleep "$WORKLOAD_WARMUP_SECONDS"
+fi
+
 # Re-anchor export window to the actual workload start (after producers/consumers are up)
 WORKLOAD_START_EPOCH="$(date +%s)"
 WORKLOAD_START_ISO="$(date -u -d "@${WORKLOAD_START_EPOCH}" +'%Y-%m-%dT%H:%M:%SZ')"
@@ -970,6 +981,24 @@ else
     log "✅ Both priority exports completed successfully, skipping secondary export"
   fi
 fi
+
+# Persist runtime logs before stopping processes so RPC diagnostics survive cleanup.
+if [ -n "$MID_CNT" ]; then
+  MID_LOG_OUT="${TEST_DIR}/${PROFILE}_middts_update_${TEST_TIMESTAMP}.log"
+  docker exec "$MID_CNT" bash -lc "if [ -f /middleware-dt/update_causal_property.out ]; then tail -n 12000 /middleware-dt/update_causal_property.out; fi" > "$MID_LOG_OUT" 2>/dev/null || true
+  [ -s "$MID_LOG_OUT" ] && log "📝 Saved middleware RPC runtime log: $MID_LOG_OUT"
+
+  MID_LG_OUT="${TEST_DIR}/${PROFILE}_middts_listen_${TEST_TIMESTAMP}.log"
+  docker exec "$MID_CNT" bash -lc "if [ -f /middleware-dt/listen_gateway.out ]; then tail -n 6000 /middleware-dt/listen_gateway.out; fi" > "$MID_LG_OUT" 2>/dev/null || true
+  [ -s "$MID_LG_OUT" ] && log "📝 Saved middleware listener log: $MID_LG_OUT"
+fi
+
+for simc in $(docker ps --format '{{.Names}}' | grep -E '^mn\.sim_[0-9]+$' || true); do
+  [ -z "$simc" ] && continue
+  SIM_LOG_OUT="${TEST_DIR}/${PROFILE}_${simc}_telemetry_${TEST_TIMESTAMP}.log"
+  docker exec "$simc" bash -lc "if [ -f /iot_simulator/send_telemetry.out ]; then tail -n 8000 /iot_simulator/send_telemetry.out; fi" > "$SIM_LOG_OUT" 2>/dev/null || true
+  [ -s "$SIM_LOG_OUT" ] && log "📝 Saved simulator runtime log: $SIM_LOG_OUT"
+done
 
 log "Now stopping processes after data capture..."
 
