@@ -1,0 +1,85 @@
+profile: urllc
+start: 2026-03-13T11:38:58Z
+duration_seconds: 600
+bucket_export: outputs/results/test_20260313T113831Z_urllc/urllc_20260313T113831Z_device_data.csv
+reports_dir: outputs/results/test_20260313T113831Z_urllc
+note: check logs for screen session: screen -r topo
+
+# Correlation-ID End-to-End Analysis
+🔄 Correlation ID End-to-End Tracing
+🔍 Parsing CSV for Correlation ID tracking...
+✅ Parsed 1521 unique M2S correlation IDs
+
+📊 M2S Delivery by Correlation ID
+  Total commands sent: 1521
+  SLA Compliance (≤150ms): 0 (0.00%)
+  Eventual Delivery (≤2000ms): 1521 (100.00%)
+  Timeout (>2000ms): 0 (0.00%)
+  Loss (never received): 0 (0.00%)
+  Total responses received: 1522
+  Retry overhead: 0.07%
+
+📊 Retry Statistics
+  Mean retries per command: 0.0
+  Median retries: 0
+  P95 retries: 0
+  Max retries: 0
+
+📊 All Delivery Latencies (eventual)
+  Count: 1521
+  Mean:  303.667
+  P50:   300.000
+  P95:   352.000
+  P99:   448.000
+  Max:   652.000
+  CV:    11.97%
+mean_S2M_ms: 66.174
+median_S2M_ms: 60.0
+S2M_total_count: 32957
+mean_M2S_ms: 303.667
+median_M2S_ms: 300.000
+M2S_total_count: 1521
+S2M_sent_count: 7153
+S2M_matched_pairs: 7153
+P50_M2S_ms: 300.0
+P95_M2S_ms: 352.000
+P99_M2S_ms: 448.0
+CV_M2S_pct: 11.97
+aot_mean_ms: 303.667
+aot_p95_ms: 352.0
+twin_fidelity_pct: 100.0
+P50_S2M_ms: 60.0
+P95_S2M_ms: 131.0
+P99_S2M_ms: 172.0
+CV_S2M_pct: 59.11
+M2S_sent_count: 1521
+M2S_received_count: 1521
+M2S_matched_pairs: 1521
+R_m2s_event_percent: 100.00
+R_m2s_pair_percent: 0.00
+M2S_total_responses_raw: 1522
+P95_ms: 352.000
+mean_S2M_ms: 66.174
+median_S2M_ms: 60.0
+S2M_total_count: 32957
+mean_M2S_ms: 303.667
+median_M2S_ms: 300.0
+M2S_total_count: 1547
+S2M_sent_count: 7153
+S2M_matched_pairs: 7153
+P50_M2S_ms: 300.0
+P95_M2S_ms: 352.0
+P99_M2S_ms: 448.0
+CV_M2S_pct: 11.97
+aot_mean_ms: 303.667
+aot_p95_ms: 352.0
+twin_fidelity_pct: 100.0
+P50_S2M_ms: 60.0
+P95_S2M_ms: 131.0
+P99_S2M_ms: 172.0
+CV_S2M_pct: 59.11
+M2S_sent_count: 1521
+M2S_received_count: 1547
+M2S_matched_pairs: 1521
+R_m2s_event_percent: 101.709
+R_m2s_pair_percent: 100.0

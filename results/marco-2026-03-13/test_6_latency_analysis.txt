@@ -1,0 +1,12 @@
+🔍 Debug: Collected 0 sensors for S2M fuzzy pairing
+⚠️ S2M: No valid pairs found (neither strict nor fuzzy)
+📊 Summary
+  S2M_received_events: 0
+  M2S_sent_events: 64
+  M2S_received_events: 14
+  R_m2s_event_percent: 21.88
+  R_m2s_pair_percent: 0.00
+
+❌ No S2M latency pairs found
+
+❌ No M2S latency pairs found

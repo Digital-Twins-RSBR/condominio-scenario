@@ -1,0 +1,77 @@
+profile: best_effort
+start: 2026-03-13T12:17:49Z
+duration_seconds: 600
+bucket_export: outputs/results/test_20260313T121722Z_best_effort/best_effort_20260313T121722Z_device_data.csv
+reports_dir: outputs/results/test_20260313T121722Z_best_effort
+note: check logs for screen session: screen -r topo
+
+# Correlation-ID End-to-End Analysis
+🔄 Correlation ID End-to-End Tracing
+🔍 Parsing CSV for Correlation ID tracking...
+✅ Parsed 65 unique M2S correlation IDs
+
+📊 M2S Delivery by Correlation ID
+  Total commands sent: 65
+  SLA Compliance (≤150ms): 0 (0.00%)
+  Eventual Delivery (≤2000ms): 0 (0.00%)
+  Timeout (>2000ms): 15 (23.08%)
+  Loss (never received): 50 (76.92%)
+  Total responses received: 15
+  Retry overhead: -76.92%
+
+📊 Retry Statistics
+  Mean retries per command: 0.0
+  Median retries: 0
+  P95 retries: 0
+  Max retries: 0
+
+📊 All Delivery Latencies (eventual)
+  Count: 15
+  Mean:  6928.533
+  P50:   6273.000
+  P95:   9589.000
+  P99:   9589.000
+  Max:   9589.000
+  CV:    18.86%
+mean_S2M_ms: 0.0
+median_S2M_ms: 0.0
+S2M_total_count: 0
+mean_M2S_ms: 6928.533
+median_M2S_ms: 6273.000
+M2S_total_count: 0
+S2M_sent_count: 0
+S2M_matched_pairs: 0
+P50_M2S_ms: 6273.0
+P95_M2S_ms: 9589.000
+P99_M2S_ms: 9589.0
+CV_M2S_pct: 18.86
+aot_mean_ms: 6928.533
+aot_p95_ms: 9589.0
+twin_fidelity_pct: 23.08
+M2S_sent_count: 65
+M2S_received_count: 0
+M2S_matched_pairs: 0
+R_m2s_event_percent: 0.00
+R_m2s_pair_percent: 0.00
+M2S_total_responses_raw: 15
+P95_ms: 9589.000
+mean_S2M_ms: 0.0
+median_S2M_ms: 0.0
+S2M_total_count: 0
+mean_M2S_ms: 6928.533
+median_M2S_ms: 6273.0
+M2S_total_count: 34
+S2M_sent_count: 0
+S2M_matched_pairs: 0
+P50_M2S_ms: 6273.0
+P95_M2S_ms: 9589.0
+P99_M2S_ms: 9589.0
+CV_M2S_pct: 18.86
+aot_mean_ms: 6928.533
+aot_p95_ms: 9589.0
+twin_fidelity_pct: 23.08
+M2S_sent_count: 65
+M2S_received_count: 34
+M2S_matched_pairs: 15
+R_m2s_event_percent: 52.308
+R_m2s_pair_percent: 23.077

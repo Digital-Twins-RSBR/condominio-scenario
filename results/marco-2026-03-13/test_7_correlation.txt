@@ -1,0 +1,27 @@
+🔄 Correlation ID End-to-End Tracing
+🔍 Parsing CSV for Correlation ID tracking...
+✅ Parsed 1688 unique M2S correlation IDs
+
+📊 M2S Delivery by Correlation ID
+  Total commands sent: 1688
+  SLA Compliance (≤150ms): 0 (0.00%)
+  Eventual Delivery (≤2000ms): 1688 (100.00%)
+  Timeout (>2000ms): 0 (0.00%)
+  Loss (never received): 0 (0.00%)
+  Total responses received: 1689
+  Retry overhead: 0.06%
+
+📊 Retry Statistics
+  Mean retries per command: 0.0
+  Median retries: 0
+  P95 retries: 0
+  Max retries: 0
+
+📊 All Delivery Latencies (eventual)
+  Count: 1688
+  Mean:  266.935
+  P50:   265.000
+  P95:   303.000
+  P99:   323.000
+  Max:   470.000
+  CV:    8.21%

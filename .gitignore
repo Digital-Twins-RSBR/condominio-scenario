@@ -1,4 +1,4 @@
-i# Python
+# Python
 __pycache__/
 *.py[cod]
 *.egg
@@ -15,6 +15,9 @@ exemplo_3sims/
 .env
 .env.*
 venv/
+.venv/
+.venv-docs/
+.venv-reports/
 
 # VSCode
 .vscode/
@@ -27,3 +30,18 @@ docker-compose.override.yml
 # System
 .DS_Store
 Thumbs.db
+
+# Local backup artifacts
+*.bak
+*.bak.*
+
+# Runtime state files
+.current_slice_profile
+config/.profile_applied_at
+
+# Run outputs (grandes demais para versionar; apenas results/ e versionado)
+outputs/
+
+# Article (versão fora do repo)
+article/
+config/.profile_applied_at

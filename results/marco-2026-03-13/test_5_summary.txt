@@ -1,0 +1,85 @@
+profile: embb
+start: 2026-03-13T12:56:40Z
+duration_seconds: 600
+bucket_export: outputs/results/test_20260313T125614Z_embb/embb_20260313T125614Z_device_data.csv
+reports_dir: outputs/results/test_20260313T125614Z_embb
+note: check logs for screen session: screen -r topo
+
+# Correlation-ID End-to-End Analysis
+🔄 Correlation ID End-to-End Tracing
+🔍 Parsing CSV for Correlation ID tracking...
+✅ Parsed 102 unique M2S correlation IDs
+
+📊 M2S Delivery by Correlation ID
+  Total commands sent: 102
+  SLA Compliance (≤150ms): 0 (0.00%)
+  Eventual Delivery (≤2000ms): 0 (0.00%)
+  Timeout (>2000ms): 20 (19.61%)
+  Loss (never received): 82 (80.39%)
+  Total responses received: 20
+  Retry overhead: -80.39%
+
+📊 Retry Statistics
+  Mean retries per command: 0.0
+  Median retries: 0
+  P95 retries: 0
+  Max retries: 0
+
+📊 All Delivery Latencies (eventual)
+  Count: 20
+  Mean:  3850.750
+  P50:   3753.000
+  P95:   5976.000
+  P99:   5976.000
+  Max:   5976.000
+  CV:    21.33%
+mean_S2M_ms: 1123.132
+median_S2M_ms: 672.0
+S2M_total_count: 4205
+mean_M2S_ms: 3850.750
+median_M2S_ms: 3753.000
+M2S_total_count: 0
+S2M_sent_count: 1037
+S2M_matched_pairs: 857
+P50_M2S_ms: 3753.0
+P95_M2S_ms: 5976.000
+P99_M2S_ms: 5976.0
+CV_M2S_pct: 21.33
+aot_mean_ms: 3850.75
+aot_p95_ms: 5976.0
+twin_fidelity_pct: 19.61
+P50_S2M_ms: 672.0
+P95_S2M_ms: 4563.0
+P99_S2M_ms: 9370.0
+CV_S2M_pct: 139.24
+M2S_sent_count: 102
+M2S_received_count: 0
+M2S_matched_pairs: 0
+R_m2s_event_percent: 0.00
+R_m2s_pair_percent: 0.00
+M2S_total_responses_raw: 20
+P95_ms: 5976.000
+mean_S2M_ms: 1123.132
+median_S2M_ms: 672.0
+S2M_total_count: 4205
+mean_M2S_ms: 3850.75
+median_M2S_ms: 3740.0
+M2S_total_count: 41
+S2M_sent_count: 1037
+S2M_matched_pairs: 857
+P50_M2S_ms: 3753.0
+P95_M2S_ms: 5976.0
+P99_M2S_ms: 5976.0
+CV_M2S_pct: 21.33
+aot_mean_ms: 3850.75
+aot_p95_ms: 5976.0
+twin_fidelity_pct: 19.61
+P50_S2M_ms: 672.0
+P95_S2M_ms: 4563.0
+P99_S2M_ms: 9370.0
+CV_S2M_pct: 139.24
+M2S_sent_count: 102
+M2S_received_count: 41
+M2S_matched_pairs: 20
+R_m2s_event_percent: 40.196
+R_m2s_pair_percent: 19.608

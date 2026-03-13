@@ -1,0 +1,15 @@
+🔍 Debug: Collected 25 sensors for S2M fuzzy pairing
+  Sensor 5c5f4c70-11dd-11f1-84fc-afee24414807: 0 sent, 2166 received
+  Sensor 5cab2280-11dd-11f1-84fc-afee24414807: 0 sent, 1256 received
+  Sensor 5cf5e720-11dd-11f1-84fc-afee24414807: 0 sent, 2637 received
+⚠️ S2M: No valid pairs found (neither strict nor fuzzy)
+📊 Summary
+  S2M_received_events: 33607
+  M2S_sent_events: 1688
+  M2S_received_events: 1689
+  R_m2s_event_percent: 100.06
+  R_m2s_pair_percent: 0.00
+
+❌ No S2M latency pairs found
+
+❌ No M2S latency pairs found

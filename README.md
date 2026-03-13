@@ -9,7 +9,7 @@ Execucao de referencia atual:
 - Suite completa com 7 cenarios
 - Duracao por cenario: 600 s
 - Comando: ./scripts/run_scenario_suite.sh --duration 600 --m2s-perf
-- Pacote de resultados unificado: outputs/tests_20260313_113047
+- Pacote de resultados unificado: results/marco-2026-03-13
 
 ### Entidades do teste
 
@@ -36,7 +36,7 @@ flowchart LR
 1. A suite executa os 7 cenarios em sequencia, no mesmo run folder.
 2. Cada cenario sobe topologia limpa, executa carga por 600 s e exporta CSVs.
 3. O pos-processamento usa correlation_id para M2S e matching FIFO por sensor para S2M.
-4. As tabelas abaixo foram geradas somente com os artefatos de outputs/tests_20260313_113047.
+4. As tabelas abaixo foram geradas somente com os artefatos de results/marco-2026-03-13.
 
 ## Metricas do teste
 
@@ -66,7 +66,9 @@ flowchart LR
 
 ## Resultados
 
-Fonte unica desta secao: outputs/tests_20260313_113047
+Fonte unica desta secao: results/marco-2026-03-13
+
+Arquivos textuais (summaries, latency analysis, correlations) estao disponiveis diretamente. Os CSVs brutos estao compactados em results/marco-2026-03-13/data.tar.gz.
 
 ### Tabela 1 - Contexto completo (S2M + M2S)
 
