@@ -44,4 +44,7 @@ outputs/
 
 # Article (versão fora do repo)
 article/
+
+# Deploy runtime logs
+deploy/logs/
 config/.profile_applied_at
