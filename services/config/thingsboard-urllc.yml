@@ -4,8 +4,8 @@
 # Reduz timeouts e delays para atingir latência <1ms
 
 # === RPC TIMEOUT CONFIGURATION ===
-# ULTRA-agressivo para URLLC: reduzido para 50ms target extremo
-CLIENT_SIDE_RPC_TIMEOUT: 50
+# Otimizado para URLLC com margem de segurança (200ms)
+CLIENT_SIDE_RPC_TIMEOUT: 200
 
 # === DATABASE BATCH PROCESSING ===
 # ULTRA-reduzido delays de batch para latência mínima
@@ -38,6 +38,14 @@ ACTORS_SYSTEM_MAX_ACTOR_MAILBOX_SIZE: 1000
 # Reduzir delays no processamento de filas
 TB_QUEUE_CORE_ADMIN_NOTIFICATION_POLL_INTERVAL_MS: 100
 TB_QUEUE_CORE_STATS_PRINT_INTERVAL_MS: 60000
+TB_QUEUE_CORE_POLL_INTERVAL_MS: 10
+
+# === RPC QUEUE PROCESSING ===
+# Acelerar processamento de RPC requests para URLLC
+# Poll interval baixo = ThingsBoard checa fila de RPC mais vezes por segundo
+TB_QUEUE_TRANSPORT_RPC_REQUESTS_POLL_INTERVAL_MS: 5
+TB_QUEUE_TRANSPORT_API_REQUESTS_POLL_INTERVAL_MS: 5
+TB_QUEUE_RULE_ENGINE_POLL_INTERVAL_MS: 10
 
 # === MAIL CONFIGURATION (DISABLED) ===
 MAIL_ENABLED: false

@@ -74,10 +74,26 @@ graceful_cleanup() {
     
     # Find the test directory
     log "📁 Locating test results..."
-    local test_dir=$(find results -name "test_*_${ACTUAL_PROFILE}" -type d | sort | tail -1)
-    
+
+    # Resolve the real results directory (follow symlink if present)
+    if [ -L results ]; then
+        RESULTS_DIR=$(readlink -f results)
+    else
+        RESULTS_DIR="results"
+    fi
+
+    # Try to locate the test dir with a small retry loop to avoid races
+    test_dir=""
+    for i in $(seq 1 10); do
+        test_dir=$(find "$RESULTS_DIR" -name "test_*_${ACTUAL_PROFILE}" -type d 2>/dev/null | sort | tail -1)
+        if [ -n "$test_dir" ]; then
+            break
+        fi
+        sleep 1
+    done
+
     if [ -z "$test_dir" ]; then
-        error "No test directory found for profile ${ACTUAL_PROFILE}"
+        error "No test directory found for profile ${ACTUAL_PROFILE} (searched: $RESULTS_DIR)"
         exit 1
     fi
     
@@ -206,18 +222,37 @@ log "💡 Press Ctrl+C at any time for graceful shutdown with partial results"
 log "✅ ODTE experiment completed successfully!"
 
 # Continue with post-processing
-latest_test_dir=$(find results -name "test_*_$PROFILE" -type d | sort | tail -1)
+# Resolve results path and retry a few times to avoid timing issues
+if [ -L results ]; then
+    RESULTS_DIR=$(readlink -f results)
+else
+    RESULTS_DIR="results"
+fi
+
+latest_test_dir=""
+for i in $(seq 1 10); do
+    latest_test_dir=$(find "$RESULTS_DIR" -name "test_*_$PROFILE" -type d 2>/dev/null | sort | tail -1)
+    if [ -n "$latest_test_dir" ]; then
+        break
+    fi
+    sleep 1
+done
 
 if [ -z "$latest_test_dir" ]; then
-    error "No test directory found for profile $PROFILE"
+    error "No test directory found for profile $PROFILE (searched: $RESULTS_DIR)"
     exit 1
 fi
 
 reports_dir="$latest_test_dir/generated_reports"
+reports_dir="$latest_test_dir/generated_reports"
 
+# Ensure reports directory exists (avoid failure if not created by earlier steps)
 if [ ! -d "$reports_dir" ]; then
-    error "Reports directory not found: $reports_dir"
-    exit 1
+    warn "Reports directory not found: $reports_dir - creating it"
+    mkdir -p "$reports_dir" || {
+        error "Failed to create reports directory: $reports_dir"
+        exit 1
+    }
 fi
 
 log "[2/4] Performing detailed latency analysis..."

@@ -400,8 +400,8 @@ class TopologyVisualizer:
                    verticalalignment='center',
                    bbox=dict(boxstyle="round,pad=0.3", facecolor="lightblue", alpha=0.7))
         
-        ax.set_title("Visão Hierárquica da Topologia", fontsize=16, fontweight='bold', pad=20)
-        ax.axis('off')
+    ax.set_title("Visão Hierárquica da Topologia", fontsize=16, fontweight='bold', pad=20)
+    ax.axis('off')
         plt.tight_layout()
         
         return fig

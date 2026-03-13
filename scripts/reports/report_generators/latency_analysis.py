@@ -20,24 +20,51 @@ def analyze_latency_causes(reports_dir):
     
     # Arquivos necessários
     files = os.listdir(reports_dir)
-    s2m_file = os.path.join(reports_dir, [f for f in files if '_latencia_stats_simulator_to_middts_' in f and f.endswith('.csv')][0])
-    m2s_file = os.path.join(reports_dir, [f for f in files if '_latencia_stats_middts_to_simulator_' in f and f.endswith('.csv')][0])
-    odte_file = os.path.join(reports_dir, [f for f in files if '_odte_' in f and f.endswith('.csv')][0])
+    s2m_candidates = [f for f in files if '_latencia_stats_simulator_to_middts_' in f and f.endswith('.csv')]
+    m2s_candidates = [f for f in files if '_latencia_stats_middts_to_simulator_' in f and f.endswith('.csv')]
+    odte_candidates = [f for f in files if '_odte_' in f and f.endswith('.csv')]
+
+    if not s2m_candidates:
+        print("[WARN] S2M latency CSV not found; skipping S2M analysis")
+        s2m_file = None
+    else:
+        s2m_file = os.path.join(reports_dir, sorted(s2m_candidates)[-1])
+
+    if not m2s_candidates:
+        print("[WARN] M2S latency CSV not found; skipping M2S analysis")
+        m2s_file = None
+    else:
+        m2s_file = os.path.join(reports_dir, sorted(m2s_candidates)[-1])
+
+    if not odte_candidates:
+        print("[WARN] ODTE CSV not found; connectivity analysis will be limited")
+        odte_file = None
+    else:
+        odte_file = os.path.join(reports_dir, sorted(odte_candidates)[-1])
     
     # Análise S2M (Simulator to Middleware)
-    print("\n📊 S2M (Simulator → Middleware)")
-    print("-" * 40)
-    s2m_stats = analyze_direction_stats(s2m_file, "S2M")
+    if s2m_file:
+        print("\n📊 S2M (Simulator → Middleware)")
+        print("-" * 40)
+        s2m_stats = analyze_direction_stats(s2m_file, "S2M")
+    else:
+        s2m_stats = {'active_sensors': 0, 'total_sensors': 0, 'latencies': [], 'mean': 0, 'stdev': 0, 'within_target': 0}
     
     # Análise M2S (Middleware to Simulator)  
-    print("\n📊 M2S (Middleware → Simulator)")
-    print("-" * 40)
-    m2s_stats = analyze_direction_stats(m2s_file, "M2S")
+    if m2s_file:
+        print("\n📊 M2S (Middleware → Simulator)")
+        print("-" * 40)
+        m2s_stats = analyze_direction_stats(m2s_file, "M2S")
+    else:
+        m2s_stats = {'active_sensors': 0, 'total_sensors': 0, 'latencies': [], 'mean': 0, 'stdev': 0, 'within_target': 0}
     
     # Análise de conectividade
     print("\n🔌 ANÁLISE DE CONECTIVIDADE")
     print("-" * 40)
-    connectivity_analysis(odte_file)
+    if odte_file:
+        connectivity_analysis(odte_file)
+    else:
+        print("[WARN] Skipping connectivity analysis (no ODTE CSV)")
     
     # Diagnóstico de gargalos
     print("\n⚠️ DIAGNÓSTICO DE GARGALOS")

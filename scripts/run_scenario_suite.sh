@@ -24,7 +24,7 @@ cleanup() {
     fi
     sudo pkill -9 -f "scripts/apply_slice.sh" 2>/dev/null || true
     if [ -n "$CURRENT_SCREEN" ]; then
-        screen -S "$CURRENT_SCREEN" -X quit 2>/dev/null || true
+        screen -ls | grep -E "[0-9]+\.${CURRENT_SCREEN}[[:space:]]" | awk '{print $1}' | xargs -r -I{} screen -S {} -X quit 2>/dev/null || true
     fi
     timeout 30 make clean >/dev/null 2>&1 || true
     exit 130
@@ -129,8 +129,8 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         --full|--suite)
-            # Run complete suite: 6 scenarios (3 optimized + 3 raw)
-            TESTS_FILTER="1,2,3,4,5,6"
+            # Run complete suite: 7 scenarios (3 optimized + 3 raw + 1 M2S perf)
+            TESTS_FILTER="1,2,3,4,5,6,7"
             shift
             ;;
         --help|-h)
@@ -142,7 +142,7 @@ while [ $# -gt 0 ]; do
             echo "  --test N            : Rodar apenas teste N (1-7)"
             echo "  --tests N,M,P       : Rodar apenas testes N, M, P (ex: --tests 1,3,5)"
             echo "  --skip N,M          : Rodar todos EXCETO testes N, M (ex: --skip 3,5)"
-            echo "  --full              : Rodar suite padrão (testes 1-6: 3 otimizados + 3 raw)"
+            echo "  --full              : Rodar suite padrão (testes 1-7: 3 otimizados + 3 raw + 1 M2S perf)"
             echo "  --m2s-perf          : Rodar suite + Teste 7 URLLC M2S Performance (1-7)"
             echo "  --with-link-events  : Habilita link scheduler (desabilitado por padrão)"
             echo "  --build-images      : Executa 'make build-images' uma vez antes da suite"
@@ -182,7 +182,7 @@ done
 should_run_test() {
     local test_num="$1"
     if [ -z "$TESTS_FILTER" ]; then
-        [ "$test_num" -le 6 ] && return 0 || return 1
+        [ "$test_num" -le 7 ] && return 0 || return 1
     fi
     echo ",$TESTS_FILTER," | grep -q ",$test_num," && return 0 || return 1
 }
@@ -206,7 +206,7 @@ log "==========================================="
 log "Duracao: ${TEST_DURATION}s por cenario"
 log "Resultados: $RESULTS_DIR"
 if [ -z "$TESTS_FILTER" ]; then
-    log "Cenários: PADRÃO (1,2,3,4,5,6)"
+    log "Cenários: PADRÃO (1,2,3,4,5,6,7)"
 else
     log "Cenários: $TESTS_FILTER (filtrado)"
 fi
@@ -286,6 +286,7 @@ run_scenario() {
     screen -L -Logfile "$screen_bootstrap_log" -dmS "$CURRENT_SCREEN" bash -lc "cd $WORKSPACE_ROOT && USE_RAW_CONFIG=$raw_env_value USE_M2S_PERF=$m2s_perf_env_value make topo PROFILE=$profile"
     log "3. Aguardando CLI..."
     i=0
+    cli_bootstrap_seen_at=0
     while true; do
         i=$((i + 1))
 
@@ -303,6 +304,17 @@ run_scenario() {
         grep -q "Starting CLI:" /tmp/topo_${num}.log 2>/dev/null \
             && grep -q "containernet>" /tmp/topo_${num}.log 2>/dev/null \
             && { log "   CLI pronto (${i}s)"; break; }
+
+        # Fallback: in some runs, screen hardcopy may miss the interactive prompt
+        # even though bootstrap log already reached "*** Starting CLI:".
+        if [ "$cli_bootstrap_seen_at" -eq 0 ] && grep -q "\*\*\* Starting CLI:" "$screen_bootstrap_log" 2>/dev/null; then
+            cli_bootstrap_seen_at="$i"
+            log "   Bootstrap atingiu 'Starting CLI' (${i}s); aguardando prompt por mais 20s..."
+        fi
+        if [ "$cli_bootstrap_seen_at" -gt 0 ] && [ $((i - cli_bootstrap_seen_at)) -ge 20 ]; then
+            log "   CLI considerado pronto via bootstrap log (${i}s)"
+            break
+        fi
 
         if [ "$i" -ge 900 ]; then
             error "Timeout aguardando CLI no screen '$CURRENT_SCREEN' (900s)."
@@ -398,7 +410,7 @@ run_scenario() {
         scenario_failed=1
     fi
     log "9. Limpando..."
-    screen -S "$CURRENT_SCREEN" -X quit 2>/dev/null || true
+    screen -ls | grep -E "[0-9]+\.${CURRENT_SCREEN}[[:space:]]" | awk '{print $1}' | xargs -r -I{} screen -S {} -X quit 2>/dev/null || true
     CURRENT_SCREEN=""
     timeout 60 make clean >/dev/null 2>&1 || true
     sleep 5
